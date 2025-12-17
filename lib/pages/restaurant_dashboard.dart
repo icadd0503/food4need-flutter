@@ -9,8 +9,8 @@ class RestaurantDashboard extends StatefulWidget {
 }
 
 class _RestaurantDashboardState extends State<RestaurantDashboard> {
-  String restaurantName =
-      "Restaurant Owner"; // You can later fetch from Firestore
+  String restaurantName = "Restaurant Owner";
+  int _currentIndex = 0;
 
   void logout() async {
     await FirebaseAuth.instance.signOut();
@@ -21,151 +21,138 @@ class _RestaurantDashboardState extends State<RestaurantDashboard> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xfffefae0),
-      body: Column(
-        children: [
-          // ---------------- NAVBAR ----------------
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-            decoration: const BoxDecoration(
-              color: Color(0xffd4a373),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black12,
-                  blurRadius: 6,
-                  offset: Offset(0, 3),
-                ),
-              ],
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                // Logo / Title
-                const Text(
-                  "Food4Need - Restaurant Dashboard",
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
 
-                // Profile dropdown
-                PopupMenuButton<String>(
-                  icon: const Icon(
-                    Icons.account_circle,
-                    color: Colors.white,
-                    size: 32,
-                  ),
-                  onSelected: (value) {
-                    if (value == "profile") {
-                      Navigator.pushNamed(context, "/restaurant-profile");
-                    }
-                    if (value == "logout") {
-                      logout();
-                    }
-                  },
-                  itemBuilder: (context) => [
-                    const PopupMenuItem(
-                      value: "profile",
-                      child: Text("Edit Profile"),
-                    ),
-                    const PopupMenuItem(value: "logout", child: Text("Logout")),
-                  ],
-                ),
-              ],
-            ),
+      // ✅ APP BAR
+      appBar: AppBar(
+        backgroundColor: const Color(0xffd4a373),
+        title: const Text("Food4Need", style: TextStyle(color: Colors.white)),
+        actions: [
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              if (value == "logout") {
+                logout();
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: "logout", child: Text("Logout")),
+            ],
           ),
+        ],
+      ),
 
-          // ---------------- HEADER ----------------
-          Padding(
-            padding: const EdgeInsets.all(25),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  "Welcome, $restaurantName 👋",
-                  style: const TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xffd4a373),
-                  ),
-                ),
-                const SizedBox(height: 5),
-                const Text(
-                  "Manage your donations and profile here.",
-                  style: TextStyle(fontSize: 16, color: Colors.black54),
-                ),
-              ],
+      // ✅ BODY
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "Welcome, $restaurantName 👋",
+              style: const TextStyle(
+                fontSize: 26,
+                fontWeight: FontWeight.bold,
+                color: Color(0xffd4a373),
+              ),
             ),
-          ),
+            const SizedBox(height: 6),
+            const Text(
+              "Manage your food donations",
+              style: TextStyle(color: Colors.black54),
+            ),
+            const SizedBox(height: 20),
 
-          // ---------------- ACTION CARDS ----------------
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: GridView.count(
-                crossAxisCount: 2,
-                crossAxisSpacing: 15,
-                mainAxisSpacing: 15,
+            // ACTION LIST
+            Expanded(
+              child: ListView(
                 children: [
-                  dashboardCard(
-                    icon: Icons.person,
-                    title: "Edit Profile",
-                    onTap: () =>
-                        Navigator.pushNamed(context, "/restaurant-profile"),
-                  ),
-                  dashboardCard(
+                  actionTile(
                     icon: Icons.volunteer_activism,
-                    title: "Create Donation",
-                    onTap: () =>
-                        Navigator.pushNamed(context, "/create-donation"),
-                  ),
-                  dashboardCard(
-                    icon: Icons.list_alt,
                     title: "My Donations",
-                    onTap: () =>
-                        Navigator.pushNamed(context, "/restaurant-donations"),
+                    subtitle: "View and manage your donations",
+                    onTap: () {
+                      Navigator.pushNamed(context, "/restaurant-donations");
+                    },
+                  ),
+                  actionTile(
+                    icon: Icons.add_circle_outline,
+                    title: "Create Donation",
+                    subtitle: "Donate surplus food",
+                    onTap: () {
+                      Navigator.pushNamed(context, "/create-donation");
+                    },
+                  ),
+                  actionTile(
+                    icon: Icons.person,
+                    title: "My Profile",
+                    subtitle: "View your restaurant profile",
+                    onTap: () {
+                      Navigator.pushNamed(context, "/restaurant-profile-view");
+                    },
                   ),
                 ],
               ),
             ),
+          ],
+        ),
+      ),
+
+      // ✅ FLOATING ACTION BUTTON
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: const Color(0xffd4a373),
+        onPressed: () {
+          Navigator.pushNamed(context, "/create-donation");
+        },
+        icon: const Icon(Icons.add),
+        label: const Text("Donate Food"),
+      ),
+
+      // ✅ BOTTOM NAVIGATION (FIXED)
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _currentIndex,
+        selectedItemColor: const Color(0xffd4a373),
+        onTap: (index) async {
+          setState(() => _currentIndex = index);
+
+          if (index == 1) {
+            await Navigator.pushNamed(context, "/restaurant-donations");
+            setState(() => _currentIndex = 0); // 👈 reset to Home
+          } else if (index == 2) {
+            await Navigator.pushNamed(context, "/restaurant-profile-view");
+            setState(() => _currentIndex = 0); // 👈 reset to Home
+          }
+        },
+
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.home), label: "Home"),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.list_alt),
+            label: "Donations",
           ),
+          BottomNavigationBarItem(icon: Icon(Icons.person), label: "Profile"),
         ],
       ),
     );
   }
 
-  // ------------- CARD WIDGET -------------
-  Widget dashboardCard({
+  // ✅ MATERIAL ACTION TILE
+  Widget actionTile({
     required IconData icon,
     required String title,
-    required Function onTap,
+    required String subtitle,
+    required VoidCallback onTap,
   }) {
-    return GestureDetector(
-      onTap: () => onTap(),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: const [
-            BoxShadow(
-              color: Colors.black12,
-              blurRadius: 6,
-              offset: Offset(0, 3),
-            ),
-          ],
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: const Color(0xfffaedcd),
+          child: Icon(icon, color: const Color(0xffd4a373)),
         ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 45, color: Color(0xffd4a373)),
-            const SizedBox(height: 15),
-            Text(
-              title,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Text(subtitle),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: onTap,
       ),
     );
   }
