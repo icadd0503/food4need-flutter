@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/fcm_service.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -13,47 +14,72 @@ class _LoginPageState extends State<LoginPage> {
   final email = TextEditingController();
   final password = TextEditingController();
 
-  String error = "";
   bool loading = false;
+  bool showPassword = false;
+  String error = "";
 
-  login() async {
-    if (email.text.isEmpty) {
-      return setState(() => error = "Please enter your email");
+  Future<void> login() async {
+    if (email.text.trim().isEmpty) {
+      setState(() => error = "Please enter your email");
+      return;
     }
+
+    if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(email.text.trim())) {
+      setState(() => error = "Please enter a valid email address");
+      return;
+    }
+
     if (password.text.isEmpty) {
-      return setState(() => error = "Please enter your password");
+      setState(() => error = "Please enter your password");
+      return;
     }
 
     try {
-      setState(() => loading = true);
+      setState(() {
+        loading = true;
+        error = "";
+      });
 
-      // Sign in Firebase Auth
-      UserCredential userCred = await FirebaseAuth.instance
-          .signInWithEmailAndPassword(
-            email: email.text,
-            password: password.text,
-          );
+      final userCred = await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: email.text.trim(),
+        password: password.text.trim(),
+      );
 
-      // Fetch Firestore document
-      DocumentSnapshot userDoc = await FirebaseFirestore.instance
+      final userDoc = await FirebaseFirestore.instance
           .collection("users")
           .doc(userCred.user!.uid)
           .get();
 
-      var data = userDoc.data() as Map<String, dynamic>;
-
-      // Check approval
-      if (data["approved"] == false) {
-        return setState(() => error = "Your account is pending admin approval");
+      if (!userDoc.exists) {
+        await FirebaseAuth.instance.signOut();
+        setState(() => error = "User record not found");
+        return;
       }
 
-      // Redirect based on role
-      if (data["role"] == "restaurant") {
-        Navigator.pushReplacementNamed(context, "/restaurant-dashboard");
-      } else if (data["role"] == "ngo") {
-        Navigator.pushReplacementNamed(context, "/ngo-dashboard");
-      } else if (data["role"] == "admin") {
-        Navigator.pushReplacementNamed(context, "/admin-dashboard");
+      final data = userDoc.data() as Map<String, dynamic>;
+
+      if (data["approved"] == false) {
+        await FirebaseAuth.instance.signOut();
+        setState(() => error = "Your account is pending admin approval");
+        return;
+      }
+
+      await FCMService.initFCM();
+
+      if (!mounted) return;
+
+      switch (data["role"]) {
+        case "restaurant":
+          Navigator.pushReplacementNamed(context, "/restaurant-dashboard");
+          break;
+        case "ngo":
+          Navigator.pushReplacementNamed(context, "/ngo-dashboard");
+          break;
+        case "admin":
+          Navigator.pushReplacementNamed(context, "/admin-dashboard");
+          break;
+        default:
+          setState(() => error = "Invalid user role");
       }
     } on FirebaseAuthException catch (e) {
       if (e.code == "user-not-found") {
@@ -61,7 +87,7 @@ class _LoginPageState extends State<LoginPage> {
       } else if (e.code == "wrong-password") {
         setState(() => error = "Incorrect password");
       } else {
-        setState(() => error = "Login failed. Try again.");
+        setState(() => error = "Login failed. Please try again.");
       }
     } finally {
       setState(() => loading = false);
@@ -73,71 +99,141 @@ class _LoginPageState extends State<LoginPage> {
     return Scaffold(
       backgroundColor: const Color(0xfffefae0),
       body: Center(
-        child: Container(
-          width: 330,
-          padding: const EdgeInsets.all(25),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: const [
-              BoxShadow(
-                color: Colors.black12,
-                blurRadius: 10,
-                offset: Offset(0, 3),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                "Food4Need Login",
-                style: TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xffd4a373),
+        child: SingleChildScrollView(
+          child: Container(
+            width: 340,
+            padding: const EdgeInsets.all(26),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: const [
+                BoxShadow(
+                  color: Colors.black12,
+                  blurRadius: 12,
+                  offset: Offset(0, 4),
                 ),
-              ),
-
-              const SizedBox(height: 10),
-
-              if (error.isNotEmpty)
-                Text(error, style: const TextStyle(color: Colors.red)),
-
-              TextField(
-                controller: email,
-                decoration: const InputDecoration(labelText: "Email"),
-              ),
-
-              TextField(
-                controller: password,
-                obscureText: true,
-                decoration: const InputDecoration(labelText: "Password"),
-              ),
-
-              const SizedBox(height: 20),
-
-              ElevatedButton(
-                onPressed: loading ? null : login,
-                style: ElevatedButton.styleFrom(
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                /// 🔥 APP LOGO
+                CircleAvatar(
+                  radius: 36,
                   backgroundColor: const Color(0xffd4a373),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  child: const Icon(
+                    Icons.fastfood,
+                    size: 40,
+                    color: Colors.white,
+                  ),
                 ),
-                child: loading
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text(
-                        "Login",
-                        style: TextStyle(color: Colors.white),
+
+                const SizedBox(height: 14),
+
+                const Text(
+                  "Food4Need",
+                  style: TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xffd4a373),
+                  ),
+                ),
+
+                const SizedBox(height: 6),
+
+                const Text(
+                  "Login to continue",
+                  style: TextStyle(color: Colors.black54),
+                ),
+
+                const SizedBox(height: 16),
+
+                if (error.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Text(
+                      error,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.red),
+                    ),
+                  ),
+
+                TextField(
+                  controller: email,
+                  enabled: !loading,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: InputDecoration(
+                    labelText: "Email",
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 14),
+
+                TextField(
+                  controller: password,
+                  enabled: !loading,
+                  obscureText: !showPassword,
+                  decoration: InputDecoration(
+                    labelText: "Password",
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        showPassword ? Icons.visibility_off : Icons.visibility,
                       ),
-              ),
+                      onPressed: () =>
+                          setState(() => showPassword = !showPassword),
+                    ),
+                  ),
+                ),
 
-              const SizedBox(height: 10),
+                const SizedBox(height: 22),
 
-              GestureDetector(
-                onTap: () => Navigator.pushNamed(context, "/register"),
-                child: const Text("Don't have an account? Register"),
-              ),
-            ],
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: loading ? null : login,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xffd4a373),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: loading
+                        ? const SizedBox(
+                            height: 22,
+                            width: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text(
+                            "Login",
+                            style: TextStyle(fontSize: 16, color: Colors.white),
+                          ),
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                GestureDetector(
+                  onTap: () => Navigator.pushNamed(context, "/register"),
+                  child: const Text(
+                    "Don't have an account? Register",
+                    style: TextStyle(
+                      color: Color(0xff5a3825),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

@@ -30,7 +30,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
           style: TextStyle(color: Colors.white),
         ),
         actions: [
-          // 🔍 FILTER DROPDOWN
+          /// FILTER
           DropdownButton<String>(
             value: filter,
             dropdownColor: const Color(0xffd4a373),
@@ -41,9 +41,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
               DropdownMenuItem(value: "pending", child: Text("Pending")),
               DropdownMenuItem(value: "approved", child: Text("Approved")),
             ],
-            onChanged: (value) {
-              setState(() => filter = value!);
-            },
+            onChanged: (value) => setState(() => filter = value!),
           ),
           IconButton(
             icon: const Icon(Icons.logout),
@@ -61,42 +59,41 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
           final users =
               snapshot.data!.docs.where((doc) {
-                  final data = doc.data() as Map<String, dynamic>;
+                final data = doc.data() as Map<String, dynamic>;
 
-                  if (doc.id == currentUid) return false;
-                  if (data["role"] == "admin") return false;
+                if (doc.id == currentUid) return false;
+                if (data["role"] == "admin") return false;
 
-                  final approved = data["approved"] ?? false;
-
-                  if (filter == "pending") return !approved;
-                  if (filter == "approved") return approved;
-                  return true;
-                }).toList()
-                // 🔼 PENDING FIRST
-                ..sort((a, b) {
-                  final aApproved =
-                      (a.data() as Map<String, dynamic>)["approved"] ?? false;
-                  final bApproved =
-                      (b.data() as Map<String, dynamic>)["approved"] ?? false;
-                  return aApproved == bApproved ? 0 : (aApproved ? 1 : -1);
-                });
+                final approved = data["approved"] ?? false;
+                if (filter == "pending") return !approved;
+                if (filter == "approved") return approved;
+                return true;
+              }).toList()..sort((a, b) {
+                final aApproved =
+                    (a.data() as Map<String, dynamic>)["approved"] ?? false;
+                final bApproved =
+                    (b.data() as Map<String, dynamic>)["approved"] ?? false;
+                return aApproved == bApproved ? 0 : (aApproved ? 1 : -1);
+              });
 
           return ListView(
             padding: const EdgeInsets.all(16),
             children: users.map((doc) {
               final data = doc.data() as Map<String, dynamic>;
-              final bool approved = data["approved"] ?? false;
+              final approved = data["approved"] ?? false;
+              final role = data["role"];
 
               return Card(
+                margin: const EdgeInsets.only(bottom: 12),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
-                margin: const EdgeInsets.only(bottom: 12),
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      /// NAME
                       Text(
                         data["name"] ?? "",
                         style: const TextStyle(
@@ -104,10 +101,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
+
                       Text(data["email"] ?? ""),
+                      Text("Role: ${role.toString().toUpperCase()}"),
+
                       const SizedBox(height: 8),
 
-                      // STATUS BADGE
+                      /// STATUS BADGE
                       Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 10,
@@ -128,8 +128,28 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         ),
                       ),
 
+                      const SizedBox(height: 10),
+
+                      /// ROLE-SPECIFIC DETAILS
+                      if (role == "restaurant") ...[
+                        Text(
+                          "Business Reg No: ${data["businessRegNo"] ?? "-"}",
+                        ),
+                        Text(
+                          "Operating Hours: ${data["operatingHours"] ?? "-"}",
+                        ),
+                        Text("Halal: ${data["halal"] == true ? "Yes" : "No"}"),
+                      ],
+
+                      if (role == "ngo") ...[
+                        Text("NGO Reg No: ${data["ngoRegNo"] ?? "-"}"),
+                        Text("Coverage Area: ${data["coverageArea"] ?? "-"}"),
+                        Text("Contact Person: ${data["contactPerson"] ?? "-"}"),
+                      ],
+
                       const SizedBox(height: 12),
 
+                      /// ACTIONS
                       if (!approved)
                         Row(
                           children: [
@@ -165,7 +185,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         Row(
                           children: [
                             DropdownButton<String>(
-                              value: data["role"],
+                              value: role,
                               items: const [
                                 DropdownMenuItem(
                                   value: "restaurant",
@@ -174,10 +194,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                 DropdownMenuItem(
                                   value: "ngo",
                                   child: Text("NGO"),
-                                ),
-                                DropdownMenuItem(
-                                  value: "admin",
-                                  child: Text("Admin"),
                                 ),
                               ],
                               onChanged: (value) {

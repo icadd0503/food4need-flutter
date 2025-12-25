@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/foundation.dart';
 
 class RestaurantProfile extends StatefulWidget {
   const RestaurantProfile({super.key});
@@ -10,16 +13,20 @@ class RestaurantProfile extends StatefulWidget {
 }
 
 class _RestaurantProfileState extends State<RestaurantProfile> {
-  // Renamed stateC for clarity
-  final nameController = TextEditingController();
-  final phoneController = TextEditingController();
-  final addressController = TextEditingController();
-  final cityController = TextEditingController();
-  final stateController = TextEditingController();
-  final closingTimeController = TextEditingController();
+  final TextEditingController nameController = TextEditingController();
+  final TextEditingController phoneController = TextEditingController();
+  final TextEditingController addressController = TextEditingController();
+  final TextEditingController businessRegNoController = TextEditingController();
 
-  bool _loading = true;
-  bool _saving = false;
+  TimeOfDay? openTime;
+  TimeOfDay? closeTime;
+
+  bool halal = true;
+  bool loading = true;
+  bool saving = false;
+
+  LatLng? selectedLocation;
+  GoogleMapController? mapController;
 
   @override
   void initState() {
@@ -27,168 +34,239 @@ class _RestaurantProfileState extends State<RestaurantProfile> {
     _loadProfile();
   }
 
-  // Dispose controllers to prevent memory leaks
   @override
   void dispose() {
     nameController.dispose();
     phoneController.dispose();
     addressController.dispose();
-    cityController.dispose();
-    stateController.dispose();
-    closingTimeController.dispose();
+    businessRegNoController.dispose();
+    mapController?.dispose();
     super.dispose();
   }
 
-  // 1. IMPROVED: Added try-catch for loading errors
-  _loadProfile() async {
+  // ================= LOAD PROFILE =================
+  Future<void> _loadProfile() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) {
-      // Handle case where user is not logged in
-      if (mounted) setState(() => _loading = false);
-      return;
+    if (uid == null) return;
+
+    final snap = await FirebaseFirestore.instance
+        .collection("users")
+        .doc(uid)
+        .get();
+
+    if (snap.exists) {
+      final data = snap.data()!;
+      nameController.text = data["name"] ?? "";
+      phoneController.text = data["phone"] ?? "";
+      addressController.text = data["address"] ?? "";
+      businessRegNoController.text = data["businessRegNo"] ?? "";
+      halal = data["halal"] == true;
+
+      // Parse operating hours string
+      if (data["operatingHours"] != null) {
+        final parts = data["operatingHours"].split(" - ");
+        openTime = _parseTime(parts[0]);
+        closeTime = _parseTime(parts[1]);
+      }
+
+      if (data["latitude"] != null && data["longitude"] != null) {
+        selectedLocation = LatLng(data["latitude"], data["longitude"]);
+      }
     }
 
-    try {
-      final ref = FirebaseFirestore.instance.collection("users").doc(uid);
-      final snap = await ref.get();
+    setState(() => loading = false);
+  }
 
-      if (snap.exists) {
-        final data = snap.data()!;
-        nameController.text = data["name"] ?? "";
-        phoneController.text = data["phone"] ?? "";
-        addressController.text = data["address"] ?? "";
-        cityController.text = data["city"] ?? "";
-        stateController.text = data["state"] ?? "";
-        closingTimeController.text = data["closingTime"] ?? "";
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error loading profile: $e')));
-      }
-    } finally {
-      if (mounted) setState(() => _loading = false);
+  TimeOfDay _parseTime(String time) {
+    final dt = TimeOfDay.fromDateTime(
+      DateTime.parse(
+        "1970-01-01 ${time.replaceAll(" AM", "").replaceAll(" PM", "")}",
+      ),
+    );
+    return dt;
+  }
+
+  // ================= PICK TIME =================
+  Future<void> _pickTime(bool isOpen) async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: isOpen
+          ? (openTime ?? TimeOfDay.now())
+          : (closeTime ?? TimeOfDay.now()),
+    );
+
+    if (picked != null) {
+      setState(() {
+        if (isOpen) {
+          openTime = picked;
+        } else {
+          closeTime = picked;
+        }
+      });
     }
   }
 
-  // 2. IMPROVED: Added try-catch for saving errors and better feedback
-  _saveProfile() async {
-    if (!mounted) return;
-    setState(() => _saving = true);
-
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) {
-      if (mounted) setState(() => _saving = false);
+  // ================= SAVE PROFILE =================
+  Future<void> _saveProfile() async {
+    if (selectedLocation == null || openTime == null || closeTime == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Please complete location and operating hours"),
+        ),
+      );
       return;
     }
 
-    try {
-      await FirebaseFirestore.instance.collection("users").doc(uid).update({
-        "name": nameController.text,
-        "phone": phoneController.text,
-        "address": addressController.text,
-        "city": cityController.text,
-        "state": stateController.text,
-        "closingTime": closingTimeController.text,
-      });
+    setState(() => saving = true);
 
-      // Show success message (Snackbar is better than an inline text widget)
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ Profile updated successfully!'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-        // 3. IMPROVED: Navigate back immediately after success feedback
-        Navigator.pop(context);
-      }
-    } catch (e) {
-      // Show error message
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('❌ Error saving profile: $e')));
-      }
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
+    final uid = FirebaseAuth.instance.currentUser!.uid;
+
+    final hours =
+        "${openTime!.format(context)} - ${closeTime!.format(context)}";
+
+    await FirebaseFirestore.instance.collection("users").doc(uid).update({
+      "name": nameController.text.trim(),
+      "phone": phoneController.text.trim(),
+      "address": addressController.text.trim(),
+      "businessRegNo": businessRegNoController.text.trim(),
+      "operatingHours": hours,
+      "halal": halal,
+      "latitude": selectedLocation!.latitude,
+      "longitude": selectedLocation!.longitude,
+    });
+
+    setState(() => saving = false);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Profile updated successfully")),
+    );
+
+    Navigator.pop(context);
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
+    if (loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
+      backgroundColor: const Color(0xfffefae0),
       appBar: AppBar(
         backgroundColor: const Color(0xffd4a373),
-        title: const Text(
-          "Edit Profile",
-          style: TextStyle(color: Colors.white),
-        ),
-        iconTheme: const IconThemeData(color: Colors.white), // For back button
+        title: const Text("Restaurant Profile"),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            // Removed the inline 'message' Text widget as Snackbar is now used
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(labelText: "Restaurant Name"),
+            _input(nameController, "Restaurant Name", Icons.store),
+            _input(phoneController, "Phone Number", Icons.phone),
+            _input(addressController, "Address", Icons.location_on),
+            _input(
+              businessRegNoController,
+              "Business Registration No",
+              Icons.assignment,
             ),
-            TextField(
-              controller: phoneController,
-              decoration: const InputDecoration(labelText: "Phone Number"),
+
+            const SizedBox(height: 10),
+
+            ListTile(
+              leading: const Icon(Icons.schedule),
+              title: Text(
+                openTime == null
+                    ? "Select Opening Time"
+                    : "Open: ${openTime!.format(context)}",
+              ),
+              onTap: () => _pickTime(true),
             ),
-            TextField(
-              controller: addressController,
-              decoration: const InputDecoration(labelText: "Address"),
+
+            ListTile(
+              leading: const Icon(Icons.schedule),
+              title: Text(
+                closeTime == null
+                    ? "Select Closing Time"
+                    : "Close: ${closeTime!.format(context)}",
+              ),
+              onTap: () => _pickTime(false),
             ),
-            TextField(
-              controller: cityController,
-              decoration: const InputDecoration(labelText: "City"),
+
+            SwitchListTile(
+              value: halal,
+              title: const Text("Halal Food"),
+              onChanged: (v) => setState(() => halal = v),
             ),
-            TextField(
-              controller: stateController,
-              decoration: const InputDecoration(labelText: "State"),
+
+            const SizedBox(height: 16),
+
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                "Pin Restaurant Location",
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
             ),
-            TextField(
-              controller: closingTimeController,
-              decoration: const InputDecoration(
-                labelText: "Closing Time (e.g., 22:00)",
+
+            const SizedBox(height: 10),
+
+            SizedBox(
+              height: 260,
+              child: GoogleMap(
+                gestureRecognizers: {
+                  Factory<OneSequenceGestureRecognizer>(
+                    () => EagerGestureRecognizer(),
+                  ),
+                },
+                initialCameraPosition: CameraPosition(
+                  target: selectedLocation ?? const LatLng(5.4164, 100.3327),
+                  zoom: 15,
+                ),
+                onTap: (latLng) => setState(() => selectedLocation = latLng),
+                markers: {
+                  if (selectedLocation != null)
+                    Marker(
+                      markerId: const MarkerId("restaurant"),
+                      position: selectedLocation!,
+                      draggable: true,
+                      onDragEnd: (p) => setState(() => selectedLocation = p),
+                    ),
+                },
               ),
             ),
 
             const SizedBox(height: 30),
 
-            ElevatedButton(
-              onPressed: _saving ? null : _saveProfile,
-              style: ElevatedButton.styleFrom(
-                minimumSize: const Size(
-                  double.infinity,
-                  50,
-                ), // Make button full width
-                backgroundColor: const Color(0xffd4a373),
-              ),
-              child: _saving
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 3,
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: saving ? null : _saveProfile,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xffd4a373),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: saving
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Text(
+                        "Save Profile",
+                        style: TextStyle(color: Colors.white, fontSize: 16),
                       ),
-                    )
-                  : const Text(
-                      "Save Changes",
-                      style: TextStyle(color: Colors.white, fontSize: 18),
-                    ),
+              ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _input(TextEditingController controller, String label, IconData icon) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: TextField(
+        controller: controller,
+        decoration: InputDecoration(
+          labelText: label,
+          prefixIcon: Icon(icon),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         ),
       ),
     );

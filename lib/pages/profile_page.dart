@@ -11,48 +11,79 @@ class ProfilePage extends StatelessWidget {
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser!.uid;
 
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: const Color(0xffd4a373),
-        title: const Text("My Profile"),
-      ),
-      body: FutureBuilder<DocumentSnapshot>(
-        future: FirebaseFirestore.instance.collection("users").doc(uid).get(),
-        builder: (context, snapshot) {
-          if (!snapshot.hasData) {
+    return Container(
+      color: const Color(0xfffefae0),
+      child: StreamBuilder<DocumentSnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection("users")
+            .doc(uid)
+            .snapshots(), // 🔥 CHANGED HERE
+        builder: (context, snap) {
+          if (!snap.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          final data = snapshot.data!.data() as Map<String, dynamic>;
+          final data = snap.data!.data() as Map<String, dynamic>;
 
-          return Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _info("Name", data["name"] ?? ""),
-                _info("Email", data["email"] ?? ""),
-                _info("Role", role.toUpperCase()),
-
-                const Spacer(),
-
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xffd4a373),
-                    minimumSize: const Size(double.infinity, 50),
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 90),
+            children: [
+              /// AVATAR
+              Center(
+                child: CircleAvatar(
+                  radius: 45,
+                  backgroundColor: const Color(0xffd4a373),
+                  child: const Icon(
+                    Icons.person,
+                    size: 50,
+                    color: Colors.white,
                   ),
-                  onPressed: () {
-                    Navigator.pushNamed(
-                      context,
-                      role == "restaurant"
-                          ? "/restaurant-profile-edit"
-                          : "/ngo-profile-edit",
-                    );
-                  },
-                  child: const Text("Edit Profile"),
                 ),
+              ),
+
+              const SizedBox(height: 20),
+
+              _info(
+                role == "restaurant" ? "Restaurant Name" : "NGO Name",
+                data["name"] ?? "",
+              ),
+              _info("Email", data["email"] ?? ""),
+              _info("Phone", data["phone"] ?? "Not set"),
+              _info("Address", data["address"] ?? "Not set"),
+
+              if (role == "restaurant") ...[
+                _info(
+                  "Business Registration No",
+                  data["businessRegNo"] ?? "Not set",
+                ),
+                _info("Operating Hours", data["operatingHours"] ?? "Not set"),
+                _info("Halal", data["halal"] == true ? "Yes" : "No"),
               ],
-            ),
+
+              if (role == "ngo") ...[
+                _info("NGO Registration No", data["ngoRegNo"] ?? "Not set"),
+                _info("Coverage Area", data["coverageArea"] ?? "Not set"),
+                _info("Contact Person", data["contactPerson"] ?? "Not set"),
+              ],
+
+              const SizedBox(height: 25),
+
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xffd4a373),
+                  minimumSize: const Size(double.infinity, 50),
+                ),
+                onPressed: () {
+                  Navigator.pushNamed(
+                    context,
+                    role == "restaurant"
+                        ? "/restaurant-profile-edit"
+                        : "/ngo-profile-edit",
+                  );
+                },
+                child: const Text("Edit Profile"),
+              ),
+            ],
           );
         },
       ),
@@ -61,11 +92,11 @@ class ProfilePage extends StatelessWidget {
 
   Widget _info(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.only(bottom: 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(color: Colors.black54)),
+          Text(label, style: const TextStyle(color: Colors.black45)),
           const SizedBox(height: 4),
           Text(
             value,
