@@ -73,7 +73,6 @@ class _CreateDonationPageState extends State<CreateDonationPage> {
 
     final now = DateTime.now();
 
-    /// SINGLE CUTOFF TIME
     final pickupDateTime = DateTime(
       now.year,
       now.month,
@@ -82,7 +81,6 @@ class _CreateDonationPageState extends State<CreateDonationPage> {
       pickupTime!.minute,
     );
 
-    /// SAFETY CHECK: must be in the future
     if (pickupDateTime.isBefore(now)) {
       setState(() {
         message = "Pickup time must be in the future.";
@@ -91,15 +89,18 @@ class _CreateDonationPageState extends State<CreateDonationPage> {
       return;
     }
 
+    // ✅ CONVERT TO TIMESTAMP (CRITICAL FIX)
+    final pickupTimestamp = Timestamp.fromDate(pickupDateTime);
+
     await FirebaseFirestore.instance.collection("donations").add({
       "title": titleController.text.trim(),
       "description": descController.text.trim(),
       "quantity": quantity,
       "halal": isHalal,
 
-      // SINGLE TIME SOURCE OF TRUTH
-      "pickupTimestamp": pickupDateTime, // pickup & accept until
-      "expiryAt": pickupDateTime, // same as pickup
+      // ✅ SINGLE SOURCE OF TRUTH
+      "pickupTimestamp": pickupTimestamp,
+      "expiryAt": pickupTimestamp,
 
       "pickupTime":
           "${pickupTime!.hour.toString().padLeft(2, '0')}:${pickupTime!.minute.toString().padLeft(2, '0')}",
@@ -111,7 +112,7 @@ class _CreateDonationPageState extends State<CreateDonationPage> {
 
       // STATUS
       "status": "available",
-      "createdAt": DateTime.now(),
+      "createdAt": Timestamp.now(), // ✅ FIX
     });
 
     setState(() {
@@ -155,7 +156,6 @@ class _CreateDonationPageState extends State<CreateDonationPage> {
 
             const SizedBox(height: 12),
 
-            /// PICKUP / EXPIRY TIME
             ListTile(
               title: Text(
                 pickupTime == null
@@ -172,7 +172,6 @@ class _CreateDonationPageState extends State<CreateDonationPage> {
 
             const SizedBox(height: 15),
 
-            /// HALAL SWITCH
             Row(
               children: [
                 const Text(

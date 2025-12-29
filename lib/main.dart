@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+
 import 'services/fcm_service.dart';
 
 // pages
@@ -18,6 +19,7 @@ import 'pages/ngo_dashboard.dart';
 import 'pages/ngo_profile.dart';
 import 'pages/onboarding_page.dart';
 import 'pages/admin_dashboard.dart';
+import 'pages/admin_activity.dart';
 import 'pages/profile_page.dart';
 import 'pages/donation_page.dart';
 import 'pages/mydonation_page.dart';
@@ -151,6 +153,7 @@ class MyApp extends StatelessWidget {
         "/ngo-history": (_) => const NGOHistoryPage(),
 
         "/admin-dashboard": (_) => const AdminDashboard(),
+        '/admin-activity': (context) => const AdminActivityPage(),
       },
 
       onGenerateRoute: (settings) {
