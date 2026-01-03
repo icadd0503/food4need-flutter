@@ -4,7 +4,6 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:math' show sin, cos, sqrt, atan2, pi;
 
-// Required for GoogleMap inside scroll view
 import 'package:flutter/gestures.dart';
 import 'package:flutter/foundation.dart';
 
@@ -47,7 +46,6 @@ class _NGODonationDetailsState extends State<NGODonationDetails> {
       return;
     }
 
-    // Restaurant info
     final restDoc = await FirebaseFirestore.instance
         .collection("users")
         .doc(donation!["restaurantId"])
@@ -55,14 +53,11 @@ class _NGODonationDetailsState extends State<NGODonationDetails> {
 
     restaurant = restDoc.data();
 
-    // Restaurant location
     if (donation!["latitude"] != null && donation!["longitude"] != null) {
       restaurantLoc = LatLng(donation!["latitude"], donation!["longitude"]);
     }
 
-    // NGO location
     final uid = FirebaseAuth.instance.currentUser!.uid;
-
     final ngoSnap = await FirebaseFirestore.instance
         .collection("users")
         .doc(uid)
@@ -88,7 +83,6 @@ class _NGODonationDetailsState extends State<NGODonationDetails> {
     setState(() => loading = false);
   }
 
-  /// HAVERSINE DISTANCE
   double calculateDistance(lat1, lon1, lat2, lon2) {
     const R = 6371;
     final dLat = _deg(lat2 - lat1);
@@ -103,7 +97,6 @@ class _NGODonationDetailsState extends State<NGODonationDetails> {
 
   double _deg(double deg) => deg * (pi / 180);
 
-  /// ACCEPT DONATION (TRANSACTION + NOTIFY RESTAURANT)
   Future<void> acceptDonation() async {
     if (donation == null) return;
 
@@ -117,10 +110,7 @@ class _NGODonationDetailsState extends State<NGODonationDetails> {
       await FirebaseFirestore.instance.runTransaction((transaction) async {
         final snap = await transaction.get(donationRef);
 
-        if (!snap.exists) {
-          throw Exception("Donation not found");
-        }
-
+        if (!snap.exists) throw Exception("Donation not found");
         if (snap["status"] != "available") {
           throw Exception("Already reserved");
         }
@@ -132,16 +122,6 @@ class _NGODonationDetailsState extends State<NGODonationDetails> {
         });
       });
 
-      // 🔔 Notify restaurant
-      await FirebaseFirestore.instance.collection("notifications").add({
-        "userId": donation!["restaurantId"],
-        "title": "Donation Reserved",
-        "body":
-            "An NGO has reserved your donation. Please confirm the reservation.",
-        "read": false,
-        "createdAt": Timestamp.now(),
-      });
-
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -149,7 +129,7 @@ class _NGODonationDetailsState extends State<NGODonationDetails> {
       );
 
       Navigator.pop(context);
-    } catch (e) {
+    } catch (_) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Donation already reserved")),
       );
@@ -171,13 +151,14 @@ class _NGODonationDetailsState extends State<NGODonationDetails> {
     final halal = donation!["halal"] == true;
     final status = donation!["status"];
     final restName = restaurant?["name"] ?? "Restaurant";
+    final restPhone = restaurant?["phone"] ?? "Not provided";
 
-    // Expiry calculation
+    final String? description = donation!["description"]?.toString().trim();
+
     String expiryText = "N/A";
     if (donation!["expiryAt"] != null) {
       final expiry = (donation!["expiryAt"] as Timestamp).toDate();
       final diff = expiry.difference(DateTime.now());
-
       expiryText = diff.isNegative
           ? "Expired"
           : "${diff.inHours}h ${diff.inMinutes % 60}m";
@@ -204,8 +185,39 @@ class _NGODonationDetailsState extends State<NGODonationDetails> {
             ),
             const SizedBox(height: 6),
             Text("From: $restName", style: const TextStyle(fontSize: 18)),
+
+            /// DESCRIPTION (OPTIONAL)
+            if (description != null && description.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Card(
+                elevation: 2,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        "Description",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: Color(0xff5a3825),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(description, style: const TextStyle(fontSize: 15)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+
             const SizedBox(height: 15),
 
+            /// INFO CARD
             Card(
               elevation: 3,
               shape: RoundedRectangleBorder(
@@ -219,16 +231,12 @@ class _NGODonationDetailsState extends State<NGODonationDetails> {
                     _infoRow("Pickup Time", donation!["pickupTime"]),
                     _infoRow("Expires In", expiryText),
                     _infoRow("Status", status),
+                    _infoRow("Phone", restPhone),
                     const SizedBox(height: 10),
                     Align(
                       alignment: Alignment.centerLeft,
                       child: Chip(
-                        label: Text(
-                          halal ? "Halal" : "Non-Halal",
-                          style: TextStyle(
-                            color: halal ? Colors.green : Colors.black,
-                          ),
-                        ),
+                        label: Text(halal ? "Halal" : "Non-Halal"),
                         backgroundColor: halal
                             ? Colors.green[100]
                             : Colors.grey[300],
@@ -267,16 +275,8 @@ class _NGODonationDetailsState extends State<NGODonationDetails> {
                         markerId: const MarkerId("restaurant"),
                         position: restaurantLoc!,
                       ),
-                      if (ngoLoc != null)
-                        Marker(
-                          markerId: const MarkerId("ngo"),
-                          position: ngoLoc!,
-                          icon: BitmapDescriptor.defaultMarkerWithHue(
-                            BitmapDescriptor.hueAzure,
-                          ),
-                        ),
                     },
-                    gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+                    gestureRecognizers: {
                       Factory<OneSequenceGestureRecognizer>(
                         () => EagerGestureRecognizer(),
                       ),
@@ -303,15 +303,6 @@ class _NGODonationDetailsState extends State<NGODonationDetails> {
                           "Accept Donation",
                           style: TextStyle(fontSize: 18),
                         ),
-                ),
-              ),
-
-            if (expiryText == "Expired")
-              const Padding(
-                padding: EdgeInsets.only(top: 12),
-                child: Text(
-                  "This donation has expired.",
-                  style: TextStyle(color: Colors.red),
                 ),
               ),
           ],

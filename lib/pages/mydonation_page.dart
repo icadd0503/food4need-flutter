@@ -12,6 +12,7 @@ class RestaurantDonationsPage extends StatelessWidget {
       case "reserved":
         return Colors.orange;
       case "accepted":
+      case "confirmed":
         return Colors.teal;
       case "completed":
         return Colors.green;
@@ -29,6 +30,7 @@ class RestaurantDonationsPage extends StatelessWidget {
       case "reserved":
         return Icons.bookmark;
       case "accepted":
+      case "confirmed":
         return Icons.local_shipping;
       case "completed":
         return Icons.check_circle;
@@ -69,11 +71,6 @@ class RestaurantDonationsPage extends StatelessWidget {
                     "No donations yet 😕",
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   ),
-                  SizedBox(height: 6),
-                  Text(
-                    "Tap the + button to add your first donation!",
-                    style: TextStyle(fontSize: 16, color: Colors.black54),
-                  ),
                 ],
               ),
             );
@@ -89,7 +86,9 @@ class RestaurantDonationsPage extends StatelessWidget {
               final halal = donation["halal"] == true;
               String status = donation["status"] ?? "available";
 
-              // ================= EXPIRY LOGIC =================
+              final ngoId = donation["ngoId"] ?? donation["reservedBy"];
+
+              // ===== EXPIRY LOGIC =====
               bool isExpired = false;
               String expiryText = "";
 
@@ -218,6 +217,7 @@ class RestaurantDonationsPage extends StatelessWidget {
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
+
                               const SizedBox(height: 10),
 
                               /// STATUS BADGE
@@ -250,50 +250,52 @@ class RestaurantDonationsPage extends StatelessWidget {
                                 ),
                               ),
 
-                              /// ✅ ACCEPT / ❌ REJECT (ONLY WHEN RESERVED)
-                              if (status == "reserved") ...[
+                              /// 🧑 NGO INFO
+                              if (ngoId != null &&
+                                  status != "available" &&
+                                  status != "expired") ...[
                                 const SizedBox(height: 12),
-                                Row(
-                                  children: [
-                                    TextButton(
-                                      child: const Text(
-                                        "Reject",
-                                        style: TextStyle(color: Colors.red),
-                                      ),
-                                      onPressed: () async {
-                                        await FirebaseFirestore.instance
-                                            .collection("donations")
-                                            .doc(docId)
-                                            .update({
-                                              "status": "available",
-                                              "reservedBy": FieldValue.delete(),
-                                            });
-                                      },
-                                    ),
-                                    const SizedBox(width: 8),
-                                    ElevatedButton(
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.green,
-                                      ),
-                                      child: const Text("Accept"),
-                                      onPressed: () async {
-                                        await FirebaseFirestore.instance
-                                            .collection("donations")
-                                            .doc(docId)
-                                            .update({
-                                              "status": "confirmed",
-                                              "acceptedAt": Timestamp.now(),
-                                            });
-                                      },
-                                    ),
-                                  ],
+                                FutureBuilder<DocumentSnapshot>(
+                                  future: FirebaseFirestore.instance
+                                      .collection("users")
+                                      .doc(ngoId)
+                                      .get(),
+                                  builder: (context, ngoSnap) {
+                                    if (!ngoSnap.hasData) {
+                                      return const Text("Loading NGO info...");
+                                    }
+
+                                    final ngo =
+                                        ngoSnap.data!.data()
+                                            as Map<String, dynamic>?;
+
+                                    if (ngo == null) {
+                                      return const Text("NGO info unavailable");
+                                    }
+
+                                    return Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          "Accepted By NGO",
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: Color(0xff5a3825),
+                                          ),
+                                        ),
+                                        Text("Name: ${ngo["name"] ?? "-"}"),
+                                        Text("Phone: ${ngo["phone"] ?? "-"}"),
+                                      ],
+                                    );
+                                  },
                                 ),
                               ],
                             ],
                           ),
                         ),
 
-                        /// MENU (EDIT ONLY)
+                        /// MENU (EDIT KEPT)
                         PopupMenuButton<String>(
                           onSelected: (value) {
                             if (value == "edit") {

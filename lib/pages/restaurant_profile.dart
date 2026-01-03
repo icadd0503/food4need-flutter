@@ -47,7 +47,11 @@ class _RestaurantProfileState extends State<RestaurantProfile> {
   // ================= LOAD PROFILE =================
   Future<void> _loadProfile() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
+    if (uid == null) {
+      // If there is no signed-in user, stop loading to avoid an infinite spinner
+      setState(() => loading = false);
+      return;
+    }
 
     final snap = await FirebaseFirestore.instance
         .collection("users")
@@ -62,15 +66,32 @@ class _RestaurantProfileState extends State<RestaurantProfile> {
       businessRegNoController.text = data["businessRegNo"] ?? "";
       halal = data["halal"] == true;
 
-      // Parse operating hours string
-      if (data["operatingHours"] != null) {
-        final parts = data["operatingHours"].split(" - ");
-        openTime = _parseTime(parts[0]);
-        closeTime = _parseTime(parts[1]);
+      // Prefer explicit opening/closing time fields (HH:mm) if present
+      if (data["openingTime"] != null && data["closingTime"] != null) {
+        try {
+          openTime = _parseTime(data["openingTime"].toString());
+          closeTime = _parseTime(data["closingTime"].toString());
+        } catch (e) {
+          // ignore parse errors and fall back to operatingHours
+        }
+      } else if (data["operatingHours"] != null) {
+        try {
+          final parts = (data["operatingHours"] as String).split(" - ");
+          if (parts.length >= 2) {
+            openTime = _parseTime(parts[0]);
+            closeTime = _parseTime(parts[1]);
+          }
+        } catch (e) {
+          // ignore parse errors and leave times null
+        }
       }
 
       if (data["latitude"] != null && data["longitude"] != null) {
-        selectedLocation = LatLng(data["latitude"], data["longitude"]);
+        final lat = data["latitude"];
+        final lng = data["longitude"];
+        if (lat is num && lng is num) {
+          selectedLocation = LatLng(lat.toDouble(), lng.toDouble());
+        }
       }
     }
 
@@ -78,12 +99,36 @@ class _RestaurantProfileState extends State<RestaurantProfile> {
   }
 
   TimeOfDay _parseTime(String time) {
-    final dt = TimeOfDay.fromDateTime(
-      DateTime.parse(
-        "1970-01-01 ${time.replaceAll(" AM", "").replaceAll(" PM", "")}",
-      ),
-    );
-    return dt;
+    final t = time.trim();
+    final reg = RegExp(r'(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?');
+    final match = reg.firstMatch(t);
+    if (match != null) {
+      int hour = int.parse(match.group(1)!);
+      final minute = int.parse(match.group(2)!);
+      final ampm = match.group(3);
+      if (ampm != null) {
+        final isPm = ampm.toLowerCase().contains('pm');
+        if (isPm && hour < 12) hour += 12;
+        if (!isPm && hour == 12) hour = 0;
+      }
+      return TimeOfDay(hour: hour % 24, minute: minute);
+    }
+    // fallback: try parse as HH:mm
+    try {
+      final parts = t.split(':');
+      if (parts.length >= 2) {
+        final hour = int.parse(parts[0]);
+        final minute = int.parse(parts[1]);
+        return TimeOfDay(hour: hour % 24, minute: minute % 60);
+      }
+    } catch (_) {}
+    return TimeOfDay.now();
+  }
+
+  String _timeTo24String(TimeOfDay t) {
+    final h = t.hour.toString().padLeft(2, '0');
+    final m = t.minute.toString().padLeft(2, '0');
+    return '$h:$m';
   }
 
   // ================= PICK TIME =================
@@ -108,40 +153,70 @@ class _RestaurantProfileState extends State<RestaurantProfile> {
 
   // ================= SAVE PROFILE =================
   Future<void> _saveProfile() async {
-    if (selectedLocation == null || openTime == null || closeTime == null) {
+    // Provide specific validation messages so user knows why save didn't happen
+    if (selectedLocation == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Please complete location and operating hours"),
-        ),
+        const SnackBar(content: Text("Please pin restaurant location on the map")),
+      );
+      return;
+    }
+    if (openTime == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please select opening time")),
+      );
+      return;
+    }
+    if (closeTime == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please select closing time")),
       );
       return;
     }
 
     setState(() => saving = true);
 
-    final uid = FirebaseAuth.instance.currentUser!.uid;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      setState(() => saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("No signed-in user found")),
+      );
+      return;
+    }
 
-    final hours =
-        "${openTime!.format(context)} - ${closeTime!.format(context)}";
+    final hours = "${openTime!.format(context)} - ${closeTime!.format(context)}";
+    final opening24 = _timeTo24String(openTime!);
+    final closing24 = _timeTo24String(closeTime!);
 
-    await FirebaseFirestore.instance.collection("users").doc(uid).update({
-      "name": nameController.text.trim(),
-      "phone": phoneController.text.trim(),
-      "address": addressController.text.trim(),
-      "businessRegNo": businessRegNoController.text.trim(),
-      "operatingHours": hours,
-      "halal": halal,
-      "latitude": selectedLocation!.latitude,
-      "longitude": selectedLocation!.longitude,
-    });
+    try {
+      await FirebaseFirestore.instance.collection("users").doc(uid).update({
+        "name": nameController.text.trim(),
+        "phone": phoneController.text.trim(),
+        "address": addressController.text.trim(),
+        "businessRegNo": businessRegNoController.text.trim(),
+        "operatingHours": hours,
+        "openingTime": opening24,
+        "closingTime": closing24,
+        "halal": halal,
+        "latitude": selectedLocation!.latitude,
+        "longitude": selectedLocation!.longitude,
+      });
 
-    setState(() => saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Profile updated successfully")),
+      );
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Profile updated successfully")),
-    );
-
-    Navigator.pop(context);
+      // Close the page after successful update
+      if (mounted) Navigator.pop(context);
+    } catch (e, st) {
+      // Log to console in debug mode and show an error to the user
+      if (kDebugMode) print("Failed to update profile: $e\n$st");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Failed to update profile: ${e.toString()}")),
+      );
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
   }
 
   @override
