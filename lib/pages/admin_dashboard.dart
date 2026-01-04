@@ -18,7 +18,8 @@ class AdminDashboard extends StatefulWidget {
 }
 
 class _AdminDashboardState extends State<AdminDashboard> {
-  int _selectedIndex = 0; // 0 = Home (stats), 1 = User Verification
+  // State variables for navigation, loading status, and statistics
+  int _selectedIndex = 0; 
   bool _loadingStats = false;
   int restaurantsCount = 0;
   int ngosCount = 0;
@@ -26,11 +27,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
   int activeDonationQuantity = 0;
   int expiredDonationQuantity = 0;
 
-  // weekly chart data (last 7 days, oldest -> newest)
+  // Data holders for the weekly line chart
   List<int> _weeklyCounts = List<int>.filled(7, 0);
   List<String> _weeklyLabels = List<String>.filled(7, '');
 
-  // user verification filter
+  // Filter state for the User Verification tab
   String _userFilter = 'all';
   final Map<String, String> _userFilterLabels = {
     'all': 'All',
@@ -46,6 +47,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     _loadStats();
   }
 
+  // Fetches dashboard statistics, chart data, and calculates totals from Firestore
   Future<void> _loadStats() async {
     setState(() => _loadingStats = true);
     try {
@@ -58,7 +60,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
           .where('role', isEqualTo: 'ngo')
           .get();
 
-      // completed donations (sum quantities) and collect for weekly chart
       final qDone = await FirebaseFirestore.instance
           .collection('donations')
           .where('completedAt', isNotEqualTo: null)
@@ -69,7 +70,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
       final today = DateTime(now.year, now.month, now.day);
       _weeklyCounts = List<int>.filled(7, 0);
       _weeklyLabels = List.generate(7, (i) {
-        final d = today.subtract(Duration(days: 6 - i)); // oldest -> newest
+        final d = today.subtract(Duration(days: 6 - i)); 
         return '${d.day}/${d.month}';
       });
 
@@ -93,15 +94,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
             completedDate.month,
             completedDate.day,
           );
-          final daysAgo = today.difference(cd).inDays; // 0 => today
+          final daysAgo = today.difference(cd).inDays; 
           if (daysAgo >= 0 && daysAgo <= 6) {
-            final idx = 6 - daysAgo; // 0..6 oldest->newest
+            final idx = 6 - daysAgo; 
             _weeklyCounts[idx] += qty;
           }
         }
       }
 
-      // active donations: sum quantities where expiryAt > now AND completedAt == null
       final qActiveCandidates = await FirebaseFirestore.instance
           .collection('donations')
           .where('expiryAt', isGreaterThan: Timestamp.fromDate(now))
@@ -119,7 +119,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
           sumActiveQty += q.toInt();
       }
 
-      // expired donations: expiryAt <= now AND not completed
       final qExpiredCandidates = await FirebaseFirestore.instance
           .collection('donations')
           .where('expiryAt', isLessThanOrEqualTo: Timestamp.fromDate(now))
@@ -157,6 +156,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
+  // Sends verification email via SMTP and updates user status to approved in Firestore
   Future<void> _approveUser(
     String userId,
     String userEmail,
@@ -195,18 +195,17 @@ Food4Need Team
     }
 
     try {
-      // Update Firebase
       await FirebaseFirestore.instance.collection('users').doc(userId).update({
         'approved': true,
         'rejected': false,
         'verifiedAt':
-            FieldValue.serverTimestamp(), // Optional: Track when verified
+            FieldValue.serverTimestamp(), 
       });
 
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).hideCurrentSnackBar(); // Hide "Processing"
+        ).hideCurrentSnackBar(); 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('User approved & Email sent!')),
         );
@@ -220,6 +219,7 @@ Food4Need Team
     }
   }
 
+  // Deletes the user document from Firestore (Rejection)
   Future<void> _rejectUser(String userId) async {
     try {
       await FirebaseFirestore.instance.collection('users').doc(userId).delete();
@@ -238,6 +238,7 @@ Food4Need Team
     }
   }
 
+  // Shows a confirmation dialog before deleting a user
   Future<void> _confirmDeleteDialog(String userId) async {
     return showDialog<void>(
       context: context,
@@ -249,14 +250,12 @@ Food4Need Team
             'Are you sure you want to permanently remove this user? This action cannot be undone.',
           ),
           actions: <Widget>[
-            // CANCEL BUTTON
             TextButton(
               child: const Text('Cancel'),
               onPressed: () {
                 Navigator.of(context).pop();
               },
             ),
-            // DELETE BUTTON
             TextButton(
               style: TextButton.styleFrom(foregroundColor: Colors.red),
               child: const Text('Delete'),
@@ -271,6 +270,7 @@ Food4Need Team
     );
   }
 
+  // Permanently deletes a user document
   Future<void> _deleteUser(String userId) async {
     try {
       await FirebaseFirestore.instance.collection('users').doc(userId).delete();
@@ -286,6 +286,7 @@ Food4Need Team
     }
   }
 
+  // Navigates to the detailed user list page
   void _openUserList(String role, String title) {
     Navigator.push(
       context,
@@ -295,11 +296,13 @@ Food4Need Team
     );
   }
 
+  // Refreshes the user list and statistics
   Future<void> _refreshUsers() async {
     await FirebaseFirestore.instance.collection('users').get();
     await _loadStats();
   }
 
+  // Renders the main dashboard tab with statistics grid and charts
   Widget _buildHome() {
     return RefreshIndicator(
       onRefresh: _loadStats,
@@ -372,10 +375,10 @@ Food4Need Team
     );
   }
 
+  // Renders the line chart showing completed donations over the last 7 days
   Widget _buildChartCard() {
     final maxYValue = _weeklyCounts.fold<int>(0, (a, b) => max(a, b));
     final maxY = max(1, maxYValue);
-    // choose at most 4 intervals for clarity
     final interval = max(1, (maxY / 4).ceil());
 
     final spots = List.generate(
@@ -411,7 +414,7 @@ Food4Need Team
                         minX: 0,
                         maxX: (_weeklyCounts.length - 1).toDouble(),
                         minY: 0,
-                        maxY: (maxY + interval).toDouble(), // give headroom
+                        maxY: (maxY + interval).toDouble(), 
                         gridData: FlGridData(
                           show: true,
                           drawVerticalLine: false,
@@ -446,7 +449,6 @@ Food4Need Team
                               interval: interval.toDouble(),
                               reservedSize: 40,
                               getTitlesWidget: (value, meta) {
-                                // show integer labels only
                                 return Text(
                                   value.toInt().toString(),
                                   style: const TextStyle(fontSize: 11),
@@ -492,7 +494,7 @@ Food4Need Team
             ),
             const SizedBox(height: 8),
             SizedBox(
-              height: 160,
+              height: 200,
               child: (totalCompletedQuantity == 0 && expiredDonationQuantity == 0)
                   ? Center(
                       child: Text(
@@ -500,29 +502,57 @@ Food4Need Team
                         style: const TextStyle(color: Colors.black54),
                       ),
                     )
-                  : PieChart(
-                      PieChartData(
-                        sectionsSpace: 2,
-                        centerSpaceRadius: 28,
-                        sections: [
-                          PieChartSectionData(
-                            value: totalCompletedQuantity.toDouble(),
-                            color: Colors.green.shade600,
-                            title: '${totalCompletedQuantity}',
-                            radius: 50,
-                            titleStyle: const TextStyle(
-                                fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                  : Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Expanded(
+                          child: PieChart(
+                            PieChartData(
+                              sectionsSpace: 2,
+                              centerSpaceRadius: 28,
+                              sections: [
+                                PieChartSectionData(
+                                  value: totalCompletedQuantity.toDouble(),
+                                  color: Colors.green.shade600,
+                                  title: 'Claimed\n${totalCompletedQuantity}',
+                                  radius: 50,
+                                  titleStyle: const TextStyle(
+                                      fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                                ),
+                                PieChartSectionData(
+                                  value: expiredDonationQuantity.toDouble(),
+                                  color: Colors.red.shade400,
+                                  title: 'Expired\n${expiredDonationQuantity}',
+                                  radius: 50,
+                                  titleStyle: const TextStyle(
+                                      fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                                ),
+                              ],
+                            ),
                           ),
-                          PieChartSectionData(
-                            value: expiredDonationQuantity.toDouble(),
-                            color: Colors.red.shade400,
-                            title: '${expiredDonationQuantity}',
-                            radius: 50,
-                            titleStyle: const TextStyle(
-                                fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
-                          ),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Row(
+                              children: [
+                                Container(width: 16, height: 16, color: Colors.green),
+                                const SizedBox(width: 6),
+                                const Text('Claimed'),
+                              ],
+                            ),
+                            const SizedBox(width: 18),
+                            Row(
+                              children: [
+                                Container(width: 16, height: 16, color: Colors.red),
+                                const SizedBox(width: 6),
+                                const Text('Expired'),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
             ),
           ],
@@ -531,6 +561,7 @@ Food4Need Team
     );
   }
 
+  // Reusable widget for top statistics cards
   Widget _statCard({
     required String label,
     required String value,
@@ -575,6 +606,7 @@ Food4Need Team
     );
   }
 
+  // Renders the User Verification tab with filtering and approval actions
   Widget _buildUserVerification() {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance.collection('users').snapshots(),
@@ -713,24 +745,24 @@ Food4Need Team
                                   backgroundColor: Colors.grey.shade300,
                                   backgroundImage:
                                       (u['profileImageUrl'] != null &&
-                                          (u['profileImageUrl'] as String)
-                                              .isNotEmpty)
-                                      ? NetworkImage(u['profileImageUrl'])
-                                      : null,
+                                              (u['profileImageUrl'] as String)
+                                                  .isNotEmpty)
+                                          ? NetworkImage(u['profileImageUrl'])
+                                          : null,
                                   child:
                                       (u['profileImageUrl'] == null ||
-                                          (u['profileImageUrl'] as String)
-                                              .isEmpty)
-                                      ? Text(
-                                          (u['name'] ?? 'U')
-                                              .toString()[0]
-                                              .toUpperCase(),
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.white,
-                                          ),
-                                        )
-                                      : null,
+                                              (u['profileImageUrl'] as String)
+                                                  .isEmpty)
+                                          ? Text(
+                                              (u['name'] ?? 'U')
+                                                  .toString()[0]
+                                                  .toUpperCase(),
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.white,
+                                              ),
+                                            )
+                                          : null,
                                 ),
                               ),
                             ),
@@ -745,6 +777,7 @@ Food4Need Team
     );
   }
 
+  // Main scaffold with Drawer navigation and body switching
   @override
   Widget build(BuildContext context) {
     final title = _selectedIndex == 0

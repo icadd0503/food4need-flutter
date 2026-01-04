@@ -1,6 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+// Displays a user's full profile details.
+// It fetches data from Firestore and adapts the UI to show specific fields
+// depending on whether the user is a Restaurant or an NGO.
 class AdminUserProfilePage extends StatelessWidget {
   final String userId;
 
@@ -37,20 +40,20 @@ class AdminUserProfilePage extends StatelessWidget {
                   radius: 50,
                   backgroundImage:
                       (user['profileImageUrl'] != null &&
-                          user['profileImageUrl'].toString().isNotEmpty)
-                      ? NetworkImage(user['profileImageUrl'])
-                      : null,
+                              user['profileImageUrl'].toString().isNotEmpty)
+                          ? NetworkImage(user['profileImageUrl'])
+                          : null,
                   child:
                       (user['profileImageUrl'] == null ||
-                          user['profileImageUrl'].toString().isEmpty)
-                      ? Text(
-                          (user['name'] ?? 'U')[0].toUpperCase(),
-                          style: const TextStyle(
-                            fontSize: 32,
-                            color: Colors.white,
-                          ),
-                        )
-                      : null,
+                              user['profileImageUrl'].toString().isEmpty)
+                          ? Text(
+                              (user['name'] ?? 'U')[0].toUpperCase(),
+                              style: const TextStyle(
+                                fontSize: 32,
+                                color: Colors.white,
+                              ),
+                            )
+                          : null,
                 ),
 
                 const SizedBox(height: 20),
@@ -65,8 +68,8 @@ class AdminUserProfilePage extends StatelessWidget {
                   user['approved'] == true
                       ? 'Approved'
                       : user['rejected'] == true
-                      ? 'Rejected'
-                      : 'Pending',
+                          ? 'Rejected'
+                          : 'Pending',
                 ),
 
                 if (user['role'] == 'restaurant') ...[

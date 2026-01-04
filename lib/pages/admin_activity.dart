@@ -9,11 +9,12 @@ class AdminActivityPage extends StatefulWidget {
 }
 
 class _AdminActivityPageState extends State<AdminActivityPage> {
+  // Caching mechanism to store user names to minimize repeated Firestore reads,
+  // and state variables for the current filter selections.
   final Map<String, String> _nameCache = {};
+  String _timeFilter = '7d';
+  String _typeFilter = 'all';
 
-  // filters
-  String _timeFilter = '7d'; // 'all', '24h', '7d', '30d'
-  String _typeFilter = 'all'; // 'all', 'userRegistered', 'posted', 'reserved', 'claimed', 'completed'
   final Map<String, String> _timeFilterLabels = {
     'all': 'All time',
     '24h': 'Last 24h',
@@ -29,9 +30,12 @@ class _AdminActivityPageState extends State<AdminActivityPage> {
     'completed': 'Completed',
   };
 
+  // Helper functions to fetch and cache user names (restaurants/NGOs) efficiently.
+  // This prevents making a network request every time a row is rendered.
   Future<String> _getUserName(String id) async {
     if (_nameCache.containsKey(id)) return _nameCache[id]!;
-    final doc = await FirebaseFirestore.instance.collection('users').doc(id).get();
+    final doc =
+        await FirebaseFirestore.instance.collection('users').doc(id).get();
     final data = doc.data() as Map<String, dynamic>?;
     final name = (data?['name'] ?? data?['email'] ?? id).toString();
     _nameCache[id] = name;
@@ -57,7 +61,10 @@ class _AdminActivityPageState extends State<AdminActivityPage> {
     return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')} ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
   }
 
-  Future<List<_ActivityItem>> _prepareEvents(QuerySnapshot donationsSnap, QuerySnapshot usersSnap) async {
+  // Core logic: Aggregates raw data from 'users' and 'donations' collections into
+  // a unified list of activity events (registrations, claims, posts) and resolves IDs to names.
+  Future<List<_ActivityItem>> _prepareEvents(
+      QuerySnapshot donationsSnap, QuerySnapshot usersSnap) async {
     final List<_ActivityItem> events = [];
     final Set<String> idsToResolve = {};
 
@@ -79,7 +86,8 @@ class _AdminActivityPageState extends State<AdminActivityPage> {
 
     for (final d in donationsSnap.docs) {
       final data = d.data() as Map<String, dynamic>? ?? {};
-      final title = (data['title'] ?? data['details'] ?? 'Donation').toString();
+      final title =
+          (data['title'] ?? data['details'] ?? 'Donation').toString();
       final qty = (data['quantity'] ?? '').toString();
       final donationId = d.id;
 
@@ -96,9 +104,12 @@ class _AdminActivityPageState extends State<AdminActivityPage> {
       }
 
       final claimedAt = data['claimedAt'] as Timestamp?;
-      final claimedBy = data['claimedBy']?.toString() ?? data['receiverId']?.toString() ?? data['reservedNgoId']?.toString();
+      final claimedBy = data['claimedBy']?.toString() ??
+          data['receiverId']?.toString() ??
+          data['reservedNgoId']?.toString();
       if (claimedAt != null) {
-        if (claimedBy != null && claimedBy.isNotEmpty) idsToResolve.add(claimedBy);
+        if (claimedBy != null && claimedBy.isNotEmpty)
+          idsToResolve.add(claimedBy);
         events.add(_ActivityItem(
           time: claimedAt.toDate(),
           type: _ActivityType.claimed,
@@ -110,7 +121,8 @@ class _AdminActivityPageState extends State<AdminActivityPage> {
       final completedAt = data['completedAt'] as Timestamp?;
       final completedBy = claimedBy;
       if (completedAt != null) {
-        if (completedBy != null && completedBy.isNotEmpty) idsToResolve.add(completedBy);
+        if (completedBy != null && completedBy.isNotEmpty)
+          idsToResolve.add(completedBy);
         events.add(_ActivityItem(
           time: completedAt.toDate(),
           type: _ActivityType.completed,
@@ -123,15 +135,21 @@ class _AdminActivityPageState extends State<AdminActivityPage> {
       if (resHist is List) {
         for (final e in resHist) {
           if (e is Map) {
-            final ngoId = (e['ngoId'] ?? e['reservedNgoId'] ?? e['id'])?.toString();
-            final ts = (e['createdAt'] ?? e['at'] ?? e['timestamp']) as Timestamp?;
+            final ngoId =
+                (e['ngoId'] ?? e['reservedNgoId'] ?? e['id'])?.toString();
+            final ts =
+                (e['createdAt'] ?? e['at'] ?? e['timestamp']) as Timestamp?;
             if (ngoId != null && ngoId.isNotEmpty && ts != null) {
               idsToResolve.add(ngoId);
               events.add(_ActivityItem(
                 time: ts.toDate(),
                 type: _ActivityType.reserved,
                 primaryId: ngoId,
-                details: {'donationId': donationId, 'title': title, 'qty': qty},
+                details: {
+                  'donationId': donationId,
+                  'title': title,
+                  'qty': qty
+                },
               ));
             }
           }
@@ -146,34 +164,51 @@ class _AdminActivityPageState extends State<AdminActivityPage> {
       switch (e.type) {
         case _ActivityType.userRegistered:
           final role = e.details?['role'] ?? 'user';
-          final name = _nameCache[e.primaryId ?? ''] ?? e.primaryId ?? 'Unknown';
+          final name =
+              _nameCache[e.primaryId ?? ''] ?? e.primaryId ?? 'Unknown';
           text = 'New ${role.toString().toUpperCase()}: $name';
           break;
         case _ActivityType.posted:
-          final rest = e.primaryId != null ? (_nameCache[e.primaryId!] ?? e.primaryId!) : 'Unknown restaurant';
-          text = '$rest posted donation "${e.details?['title']}" (${e.details?['qty'] ?? '-'})';
+          final rest = e.primaryId != null
+              ? (_nameCache[e.primaryId!] ?? e.primaryId!)
+              : 'Unknown restaurant';
+          text =
+              '$rest posted donation "${e.details?['title']}" (${e.details?['qty'] ?? '-'})';
           break;
         case _ActivityType.claimed:
-          final ngo = e.primaryId != null ? (_nameCache[e.primaryId!] ?? e.primaryId!) : 'Unknown NGO';
-          text = '$ngo claimed donation "${e.details?['title']}" (${e.details?['qty'] ?? '-'})';
+          final ngo = e.primaryId != null
+              ? (_nameCache[e.primaryId!] ?? e.primaryId!)
+              : 'Unknown NGO';
+          text =
+              '$ngo claimed donation "${e.details?['title']}" (${e.details?['qty'] ?? '-'})';
           break;
         case _ActivityType.completed:
-          final ngo = e.primaryId != null ? (_nameCache[e.primaryId!] ?? e.primaryId!) : 'Unknown NGO';
+          final ngo = e.primaryId != null
+              ? (_nameCache[e.primaryId!] ?? e.primaryId!)
+              : 'Unknown NGO';
           text = 'Donation "${e.details?['title']}" completed by $ngo';
           break;
         case _ActivityType.reserved:
-          final ngo = e.primaryId != null ? (_nameCache[e.primaryId!] ?? e.primaryId!) : 'Unknown NGO';
-          text = '$ngo reserved donation "${e.details?['title']}" (${e.details?['qty'] ?? '-'})';
+          final ngo = e.primaryId != null
+              ? (_nameCache[e.primaryId!] ?? e.primaryId!)
+              : 'Unknown NGO';
+          text =
+              '$ngo reserved donation "${e.details?['title']}" (${e.details?['qty'] ?? '-'})';
           break;
       }
-      return _ActivityItem(time: e.time, type: e.type, primaryId: e.primaryId, details: e.details, pretty: text);
+      return _ActivityItem(
+          time: e.time,
+          type: e.type,
+          primaryId: e.primaryId,
+          details: e.details,
+          pretty: text);
     }).toList();
 
     resolved.sort((a, b) => b.time.compareTo(a.time));
     return resolved;
   }
 
-  // filter helpers
+  // Filtering logic to check if an activity item matches the selected Type and Time range.
   bool _typeMatchesFilter(_ActivityItem e) {
     if (_typeFilter == 'all') return true;
     switch (_typeFilter) {
@@ -212,6 +247,7 @@ class _AdminActivityPageState extends State<AdminActivityPage> {
     return e.time.isAfter(cutoff);
   }
 
+  // Renders the dropdown UI for selecting time and activity type filters.
   Widget _buildFilterBar() {
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8),
@@ -222,8 +258,12 @@ class _AdminActivityPageState extends State<AdminActivityPage> {
             Expanded(
               child: DropdownButtonFormField<String>(
                 value: _timeFilter,
-                decoration: const InputDecoration(labelText: 'Time', isDense: true),
-                items: _timeFilterLabels.entries.map((e) => DropdownMenuItem(value: e.key, child: Text(e.value))).toList(),
+                decoration:
+                    const InputDecoration(labelText: 'Time', isDense: true),
+                items: _timeFilterLabels.entries
+                    .map((e) => DropdownMenuItem(
+                        value: e.key, child: Text(e.value)))
+                    .toList(),
                 onChanged: (v) {
                   if (v == null) return;
                   setState(() => _timeFilter = v);
@@ -234,8 +274,12 @@ class _AdminActivityPageState extends State<AdminActivityPage> {
             Expanded(
               child: DropdownButtonFormField<String>(
                 value: _typeFilter,
-                decoration: const InputDecoration(labelText: 'Type', isDense: true),
-                items: _typeFilterLabels.entries.map((e) => DropdownMenuItem(value: e.key, child: Text(e.value))).toList(),
+                decoration:
+                    const InputDecoration(labelText: 'Type', isDense: true),
+                items: _typeFilterLabels.entries
+                    .map((e) => DropdownMenuItem(
+                        value: e.key, child: Text(e.value)))
+                    .toList(),
                 onChanged: (v) {
                   if (v == null) return;
                   setState(() => _typeFilter = v);
@@ -248,32 +292,50 @@ class _AdminActivityPageState extends State<AdminActivityPage> {
     );
   }
 
+  // Main build method: Uses nested StreamBuilders to listen to Donations and Users collections,
+  // processes the data, applies filters, and renders the list of activities.
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Recent Activity'), backgroundColor: const Color(0xffd4a373)),
+      appBar: AppBar(
+          title: const Text('Recent Activity'),
+          backgroundColor: const Color(0xffd4a373)),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance.collection('donations').snapshots(),
         builder: (context, donationsSnap) {
-          if (donationsSnap.hasError) return const Center(child: Text('Error loading donations'));
-          if (!donationsSnap.hasData) return const Center(child: CircularProgressIndicator());
+          if (donationsSnap.hasError)
+            return const Center(child: Text('Error loading donations'));
+          if (!donationsSnap.hasData)
+            return const Center(child: CircularProgressIndicator());
           return StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance.collection('users').snapshots(),
+            stream:
+                FirebaseFirestore.instance.collection('users').snapshots(),
             builder: (context, usersSnap) {
-              if (usersSnap.hasError) return const Center(child: Text('Error loading users'));
-              if (!usersSnap.hasData) return const Center(child: CircularProgressIndicator());
+              if (usersSnap.hasError)
+                return const Center(child: Text('Error loading users'));
+              if (!usersSnap.hasData)
+                return const Center(child: CircularProgressIndicator());
               return FutureBuilder<List<_ActivityItem>>(
-                future: _prepareEvents(donationsSnap.data!, usersSnap.data!),
+                future:
+                    _prepareEvents(donationsSnap.data!, usersSnap.data!),
                 builder: (context, snap) {
-                  if (snap.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-                  if (snap.hasError) return Center(child: Text('Failed to prepare activity: ${snap.error}'));
+                  if (snap.connectionState == ConnectionState.waiting)
+                    return const Center(child: CircularProgressIndicator());
+                  if (snap.hasError)
+                    return Center(
+                        child: Text(
+                            'Failed to prepare activity: ${snap.error}'));
                   final events = snap.data ?? [];
                   // apply filters
-                  final filtered = events.where((e) => _typeMatchesFilter(e) && _timeMatchesFilter(e)).toList();
+                  final filtered = events
+                      .where((e) =>
+                          _typeMatchesFilter(e) && _timeMatchesFilter(e))
+                      .toList();
                   if (filtered.isEmpty) {
                     return RefreshIndicator(
                       onRefresh: () async {
-                        await Future.delayed(const Duration(milliseconds: 300));
+                        await Future.delayed(
+                            const Duration(milliseconds: 300));
                         setState(() {});
                       },
                       child: ListView(
@@ -283,7 +345,11 @@ class _AdminActivityPageState extends State<AdminActivityPage> {
                             child: _buildFilterBar(),
                           ),
                           const SizedBox(height: 32),
-                          Center(child: Text(_timeFilter == 'all' && _typeFilter == 'all' ? 'No recent activity' : 'No activity for selected filters')),
+                          Center(
+                              child: Text(_timeFilter == 'all' &&
+                                      _typeFilter == 'all'
+                                  ? 'No recent activity'
+                                  : 'No activity for selected filters')),
                         ],
                       ),
                     );
@@ -308,7 +374,11 @@ class _AdminActivityPageState extends State<AdminActivityPage> {
                               final ev = filtered[i];
                               final icon = _iconForType(ev.type);
                               return ListTile(
-                                leading: CircleAvatar(backgroundColor: icon.color.withOpacity(0.1), child: Icon(icon.icon, color: icon.color)),
+                                leading: CircleAvatar(
+                                    backgroundColor:
+                                        icon.color.withOpacity(0.1),
+                                    child: Icon(icon.icon,
+                                        color: icon.color)),
                                 title: Text(ev.pretty ?? ''),
                                 subtitle: Text(_fmtDate(ev.time)),
                               );
@@ -327,6 +397,7 @@ class _AdminActivityPageState extends State<AdminActivityPage> {
     );
   }
 
+  // Returns specific icon and color styling for each activity type.
   _IconPair _iconForType(_ActivityType t) {
     switch (t) {
       case _ActivityType.userRegistered:
@@ -343,6 +414,7 @@ class _AdminActivityPageState extends State<AdminActivityPage> {
   }
 }
 
+// Data models and enums to represent activity events and visual properties.
 class _ActivityItem {
   final DateTime time;
   final _ActivityType type;
@@ -350,7 +422,12 @@ class _ActivityItem {
   final Map<String, dynamic>? details;
   final String? pretty;
 
-  _ActivityItem({required this.time, required this.type, this.primaryId, this.details, this.pretty});
+  _ActivityItem(
+      {required this.time,
+      required this.type,
+      this.primaryId,
+      this.details,
+      this.pretty});
 }
 
 enum _ActivityType { userRegistered, posted, reserved, claimed, completed }
