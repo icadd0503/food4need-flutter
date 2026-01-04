@@ -4,6 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:mailer/mailer.dart';
+import 'package:mailer/smtp_server.dart';
 
 import 'user_list.dart';
 
@@ -134,23 +136,60 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
-  Future<void> _approveUser(String userId) async {
-    try {
-      await FirebaseFirestore.instance.collection('users').doc(userId).update({
-        'approved': true,
-        'rejected': false,
-      });
-      if (mounted)
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('User approved')));
-    } catch (e) {
-      if (mounted)
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Approve failed: $e')));
+Future<void> _approveUser(String userId, String userEmail, String userName) async {
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('Processing verification...')),
+  );
+
+  String username = 'yoyohuazo1234@gmail.com';
+  String password = 'pawv qmfy fuoe xfan'; 
+
+  final smtpServer = gmail(username, password);
+
+  final message = Message()
+    ..from = Address(username, 'Food4Need Admin')
+    ..recipients.add(userEmail)
+    ..subject = 'Account Verified: Welcome to Food4Need!'
+    ..text = '''
+Hello $userName,
+
+Good news! Your account has been successfully verified by the Food4Need Admin team.You can now log in to the application and start using all features.
+
+Thank you for joining us in our mission to reach Zero Hunger!
+
+Regards,
+Food4Need Team
+''';
+
+  try {
+    await send(message, smtpServer);
+    print('Email sent successfully');
+  } catch (e) {
+    print('Email failed: $e');
+  }
+
+  try {
+    // Update Firebase
+    await FirebaseFirestore.instance.collection('users').doc(userId).update({
+      'approved': true,
+      'rejected': false,
+      'verifiedAt': FieldValue.serverTimestamp(), // Optional: Track when verified
+    });
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar(); // Hide "Processing"
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('User approved & Email sent!')),
+      );
+    }
+  } catch (e) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Approve failed: $e')),
+      );
     }
   }
+}
 
   Future<void> _rejectUser(String userId) async {
     try {
@@ -510,8 +549,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                 children: [
                                   if (!approved) ...[
                                     TextButton(
-                                      onPressed: () => _approveUser(u['id']),
-                                      child: const Text('Approve'),
+                                      onPressed: () => _approveUser(
+                                        u['id'], 
+                                        u['email'] ?? '', 
+                                        u['name'] ?? 'User'
+                                      ), 
+                                    child: const Text('Approve'),
                                     ),
                                     TextButton(
                                       onPressed: () => _rejectUser(u['id']),
