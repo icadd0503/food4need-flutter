@@ -6,6 +6,8 @@ const {
 const { getFirestore } = require("firebase-admin/firestore");
 const { getMessaging } = require("firebase-admin/messaging");
 const { initializeApp } = require("firebase-admin/app");
+const { defineSecret } = require("firebase-functions/params");
+const SENDGRID_KEY = defineSecret("SENDGRID_KEY");
 
 initializeApp();
 
@@ -26,6 +28,7 @@ exports.sendDailyDonationReminder = onSchedule(
     const utc = now.getTime() + now.getTimezoneOffset() * 60000;
     const nowKL = new Date(utc + 8 * 60 * 1000);
     const today = nowKL.toISOString().split("T")[0]; // YYYY-MM-DD in KL timezone
+
 
     const usersSnap = await db
       .collection("users")
@@ -340,3 +343,29 @@ function calculateDistanceKm(lat1, lon1, lat2, lon2) {
 function deg2rad(deg) {
   return deg * (Math.PI / 180);
 }
+
+/* =========================================================
+   📧 EMAIL USER WHEN ACCOUNT IS APPROVED
+========================================================= */
+exports.notifyUserApproved = onDocumentUpdated(
+  {
+    document: "users/{userId}",
+    secrets: [SENDGRID_KEY],
+  },
+  async (event) => {
+    const before = event.data.before.data();
+    const after = event.data.after.data();
+
+    if (before.approved === true || after.approved !== true) return;
+
+    const sgMail = require("@sendgrid/mail");
+    sgMail.setApiKey(SENDGRID_KEY.value());
+
+    await sgMail.send({
+      to: after.email,
+      from: "no-reply@food4need.app",
+      subject: "Your account has been approved ✅",
+      text: "Your Food4Need account is now approved. You may log in.",
+    });
+  }
+);
