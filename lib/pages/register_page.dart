@@ -1,6 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -28,9 +32,27 @@ class _RegisterPageState extends State<RegisterPage> {
   final coverageArea = TextEditingController();
   final contactPerson = TextEditingController();
 
+  // PROFILE IMAGE (ADDED)
+  File? _profileImage;
+  final ImagePicker _picker = ImagePicker();
+
   String role = "";
   String message = "";
   bool loading = false;
+
+  // ================= IMAGE PICKER =================
+  Future<void> _pickProfileImage() async {
+    final picked = await _picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 70,
+    );
+
+    if (picked != null) {
+      setState(() {
+        _profileImage = File(picked.path);
+      });
+    }
+  }
 
   // ================= TIME PICKER =================
   Future<void> _pickTime(bool isOpen) async {
@@ -105,6 +127,24 @@ class _RegisterPageState extends State<RegisterPage> {
         password: password.text,
       );
 
+      // ========= UPLOAD PROFILE IMAGE (ADDED) =========
+      String? profileImageUrl;
+
+      if (_profileImage != null) {
+        final uid = FirebaseAuth.instance.currentUser!.uid;
+
+        final ref = FirebaseStorage.instance
+            .ref()
+            .child("profile_pictures")
+            .child(uid)
+            .child("profile.jpg");
+
+        await ref.putFile(_profileImage!);
+
+        // ✅ SAVE URL INTO VARIABLE
+        profileImageUrl = await ref.getDownloadURL();
+      }
+
       await FirebaseFirestore.instance
           .collection("users")
           .doc(cred.user!.uid)
@@ -114,6 +154,9 @@ class _RegisterPageState extends State<RegisterPage> {
             "phone": phone.text.trim(),
             "address": address.text.trim(),
             "role": role,
+
+            // PROFILE IMAGE (ADDED)
+            "profileImageUrl": profileImageUrl,
 
             // RESTAURANT
             "businessRegNo": role == "restaurant"
@@ -135,9 +178,13 @@ class _RegisterPageState extends State<RegisterPage> {
 
       if (!mounted) return;
 
-      setState(() {
-        message = "Registration successful! Await admin approval.";
-      });
+      // ===== SUCCESS MESSAGE (ADDED) =====
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Registration successful! Await admin approval."),
+          backgroundColor: Colors.green,
+        ),
+      );
 
       Future.delayed(const Duration(seconds: 2), () {
         if (mounted) {
@@ -190,7 +237,6 @@ class _RegisterPageState extends State<RegisterPage> {
 
                 const SizedBox(height: 12),
 
-                /// 🔥 REGISTER AS (MOVED TO TOP)
                 DropdownButtonFormField<String>(
                   value: role.isEmpty ? null : role,
                   decoration: const InputDecoration(
@@ -205,6 +251,29 @@ class _RegisterPageState extends State<RegisterPage> {
                     DropdownMenuItem(value: "ngo", child: Text("NGO")),
                   ],
                   onChanged: (v) => setState(() => role = v!),
+                ),
+
+                const SizedBox(height: 14),
+
+                // ===== PROFILE IMAGE PICKER (ADDED) =====
+                Center(
+                  child: GestureDetector(
+                    onTap: _pickProfileImage,
+                    child: CircleAvatar(
+                      radius: 48,
+                      backgroundColor: Colors.grey.shade300,
+                      backgroundImage: _profileImage != null
+                          ? FileImage(_profileImage!)
+                          : null,
+                      child: _profileImage == null
+                          ? const Icon(
+                              Icons.camera_alt,
+                              size: 32,
+                              color: Colors.white,
+                            )
+                          : null,
+                    ),
+                  ),
                 ),
 
                 const SizedBox(height: 14),
@@ -231,7 +300,6 @@ class _RegisterPageState extends State<RegisterPage> {
                 if (role == "restaurant") ...[
                   _sectionTitle("Restaurant Information"),
                   _input(businessRegNo, "Business Registration No"),
-
                   _sectionTitle("Operating Hours"),
                   ListTile(
                     title: Text(
@@ -251,7 +319,6 @@ class _RegisterPageState extends State<RegisterPage> {
                     trailing: const Icon(Icons.schedule),
                     onTap: () => _pickTime(false),
                   ),
-
                   SwitchListTile(
                     value: halal,
                     title: const Text("Halal Food"),
@@ -280,21 +347,6 @@ class _RegisterPageState extends State<RegisterPage> {
                           "Register",
                           style: TextStyle(fontSize: 18, color: Colors.white),
                         ),
-                ),
-
-                const SizedBox(height: 10),
-
-                GestureDetector(
-                  onTap: () =>
-                      Navigator.pushReplacementNamed(context, "/login"),
-                  child: const Text(
-                    "Already have an account? Login",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Color(0xff5a3825),
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
                 ),
               ],
             ),

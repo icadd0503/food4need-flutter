@@ -6,6 +6,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:mailer/mailer.dart';
 import 'package:mailer/smtp_server.dart';
+import 'admin_user_profile_page.dart';
 
 import 'user_list.dart';
 
@@ -136,21 +137,26 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
-Future<void> _approveUser(String userId, String userEmail, String userName) async {
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(content: Text('Processing verification...')),
-  );
+  Future<void> _approveUser(
+    String userId,
+    String userEmail,
+    String userName,
+  ) async {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Processing verification...')));
 
-  String username = 'yoyohuazo1234@gmail.com';
-  String password = 'pawv qmfy fuoe xfan'; 
+    String username = 'yoyohuazo1234@gmail.com';
+    String password = 'pawv qmfy fuoe xfan';
 
-  final smtpServer = gmail(username, password);
+    final smtpServer = gmail(username, password);
 
-  final message = Message()
-    ..from = Address(username, 'Food4Need Admin')
-    ..recipients.add(userEmail)
-    ..subject = 'Account Verified: Welcome to Food4Need!'
-    ..text = '''
+    final message = Message()
+      ..from = Address(username, 'Food4Need Admin')
+      ..recipients.add(userEmail)
+      ..subject = 'Account Verified: Welcome to Food4Need!'
+      ..text =
+          '''
 Hello $userName,
 
 Good news! Your account has been successfully verified by the Food4Need Admin team.You can now log in to the application and start using all features.
@@ -161,35 +167,38 @@ Regards,
 Food4Need Team
 ''';
 
-  try {
-    await send(message, smtpServer);
-    print('Email sent successfully');
-  } catch (e) {
-    print('Email failed: $e');
-  }
-
-  try {
-    // Update Firebase
-    await FirebaseFirestore.instance.collection('users').doc(userId).update({
-      'approved': true,
-      'rejected': false,
-      'verifiedAt': FieldValue.serverTimestamp(), // Optional: Track when verified
-    });
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).hideCurrentSnackBar(); // Hide "Processing"
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('User approved & Email sent!')),
-      );
+    try {
+      await send(message, smtpServer);
+      print('Email sent successfully');
+    } catch (e) {
+      print('Email failed: $e');
     }
-  } catch (e) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Approve failed: $e')),
-      );
+
+    try {
+      // Update Firebase
+      await FirebaseFirestore.instance.collection('users').doc(userId).update({
+        'approved': true,
+        'rejected': false,
+        'verifiedAt':
+            FieldValue.serverTimestamp(), // Optional: Track when verified
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).hideCurrentSnackBar(); // Hide "Processing"
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('User approved & Email sent!')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Approve failed: $e')));
+      }
     }
   }
-}
 
   Future<void> _rejectUser(String userId) async {
     try {
@@ -212,7 +221,7 @@ Food4Need Team
   Future<void> _confirmDeleteDialog(String userId) async {
     return showDialog<void>(
       context: context,
-      barrierDismissible: false, 
+      barrierDismissible: false,
       builder: (BuildContext context) {
         return AlertDialog(
           title: const Text('Confirm Deletion'),
@@ -224,18 +233,16 @@ Food4Need Team
             TextButton(
               child: const Text('Cancel'),
               onPressed: () {
-                Navigator.of(context).pop(); 
+                Navigator.of(context).pop();
               },
             ),
             // DELETE BUTTON
             TextButton(
-              style: TextButton.styleFrom(
-                foregroundColor: Colors.red, 
-              ),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
               child: const Text('Delete'),
               onPressed: () {
-                Navigator.of(context).pop(); 
-                _deleteUser(userId); 
+                Navigator.of(context).pop();
+                _deleteUser(userId);
               },
             ),
           ],
@@ -585,14 +592,15 @@ Food4Need Team
                                   if (!approved) ...[
                                     TextButton(
                                       onPressed: () => _approveUser(
-                                        u['id'], 
-                                        u['email'] ?? '', 
-                                        u['name'] ?? 'User'
-                                      ), 
-                                    child: const Text('Approve'),
+                                        u['id'],
+                                        u['email'] ?? '',
+                                        u['name'] ?? 'User',
+                                      ),
+                                      child: const Text('Approve'),
                                     ),
                                     TextButton(
-                                      onPressed: () => _confirmDeleteDialog(u['id']),
+                                      onPressed: () =>
+                                          _confirmDeleteDialog(u['id']),
                                       child: const Text(
                                         'Reject',
                                         style: TextStyle(color: Colors.red),
@@ -622,34 +630,46 @@ Food4Need Team
                                         Icons.delete,
                                         color: Colors.red,
                                       ),
-                                      onPressed: () => _confirmDeleteDialog(u['id']),
+                                      onPressed: () =>
+                                          _confirmDeleteDialog(u['id']),
                                     ),
                                   ],
                                 ],
                               ),
-                              leading: CircleAvatar(
-                                radius: 22,
-                                backgroundColor: Colors.grey.shade300,
-                                backgroundImage:
-                                    (u['profileImageUrl'] != null &&
-                                        (u['profileImageUrl'] as String)
-                                            .isNotEmpty)
-                                    ? NetworkImage(u['profileImageUrl'])
-                                    : null,
-                                child:
-                                    (u['profileImageUrl'] == null ||
-                                        (u['profileImageUrl'] as String)
-                                            .isEmpty)
-                                    ? Text(
-                                        (u['name'] ?? 'U')
-                                            .toString()[0]
-                                            .toUpperCase(),
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.white,
-                                        ),
-                                      )
-                                    : null,
+                              leading: GestureDetector(
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          AdminUserProfilePage(userId: u['id']),
+                                    ),
+                                  );
+                                },
+                                child: CircleAvatar(
+                                  radius: 22,
+                                  backgroundColor: Colors.grey.shade300,
+                                  backgroundImage:
+                                      (u['profileImageUrl'] != null &&
+                                          (u['profileImageUrl'] as String)
+                                              .isNotEmpty)
+                                      ? NetworkImage(u['profileImageUrl'])
+                                      : null,
+                                  child:
+                                      (u['profileImageUrl'] == null ||
+                                          (u['profileImageUrl'] as String)
+                                              .isEmpty)
+                                      ? Text(
+                                          (u['name'] ?? 'U')
+                                              .toString()[0]
+                                              .toUpperCase(),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white,
+                                          ),
+                                        )
+                                      : null,
+                                ),
                               ),
                             ),
                           );

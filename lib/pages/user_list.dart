@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import 'restaurant_detail.dart';
 import 'ngo_detail.dart';
+import 'admin_user_profile_page.dart';
 
 class UserListPage extends StatelessWidget {
   final String role;
@@ -58,22 +59,29 @@ class UserListPage extends StatelessWidget {
                   data['name'] ?? data['email'] ?? 'User';
 
               return ListTile(
-                leading: CircleAvatar(
-                  radius: 22,
-                  backgroundColor: Colors.grey.shade300,
-                  backgroundImage: imageUrl != null
-                      ? NetworkImage(imageUrl)
-                      : null,
-                  child: imageUrl == null
-                      ? Text(
-                          displayName[0].toUpperCase(),
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        )
-                      : null,
+                leading: GestureDetector(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => AdminUserProfilePage(userId: d.id),
+                      ),
+                    );
+                  },
+                  child: CircleAvatar(
+                    backgroundImage:
+                        (data['profileImageUrl'] != null &&
+                            data['profileImageUrl'].toString().isNotEmpty)
+                        ? NetworkImage(data['profileImageUrl'])
+                        : null,
+                    child:
+                        (data['profileImageUrl'] == null ||
+                            data['profileImageUrl'].toString().isEmpty)
+                        ? Text((data['name'] ?? 'U')[0].toUpperCase())
+                        : null,
+                  ),
                 ),
+
                 title: Text(displayName),
                 subtitle: Text(data['email'] ?? '-'),
                 trailing: Text(
