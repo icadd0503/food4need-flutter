@@ -209,6 +209,41 @@ Food4Need Team
     }
   }
 
+  Future<void> _confirmDeleteDialog(String userId) async {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false, 
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Confirm Deletion'),
+          content: const Text(
+            'Are you sure you want to permanently remove this user? This action cannot be undone.',
+          ),
+          actions: <Widget>[
+            // CANCEL BUTTON
+            TextButton(
+              child: const Text('Cancel'),
+              onPressed: () {
+                Navigator.of(context).pop(); 
+              },
+            ),
+            // DELETE BUTTON
+            TextButton(
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.red, 
+              ),
+              child: const Text('Delete'),
+              onPressed: () {
+                Navigator.of(context).pop(); 
+                _deleteUser(userId); 
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Future<void> _deleteUser(String userId) async {
     try {
       await FirebaseFirestore.instance.collection('users').doc(userId).delete();
@@ -557,7 +592,7 @@ Food4Need Team
                                     child: const Text('Approve'),
                                     ),
                                     TextButton(
-                                      onPressed: () => _rejectUser(u['id']),
+                                      onPressed: () => _confirmDeleteDialog(u['id']),
                                       child: const Text(
                                         'Reject',
                                         style: TextStyle(color: Colors.red),
@@ -587,7 +622,7 @@ Food4Need Team
                                         Icons.delete,
                                         color: Colors.red,
                                       ),
-                                      onPressed: () => _deleteUser(u['id']),
+                                      onPressed: () => _confirmDeleteDialog(u['id']),
                                     ),
                                   ],
                                 ],
