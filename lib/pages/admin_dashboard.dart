@@ -24,6 +24,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   int ngosCount = 0;
   int totalCompletedQuantity = 0;
   int activeDonationQuantity = 0;
+  int expiredDonationQuantity = 0;
 
   // weekly chart data (last 7 days, oldest -> newest)
   List<int> _weeklyCounts = List<int>.filled(7, 0);
@@ -118,12 +119,31 @@ class _AdminDashboardState extends State<AdminDashboard> {
           sumActiveQty += q.toInt();
       }
 
+      // expired donations: expiryAt <= now AND not completed
+      final qExpiredCandidates = await FirebaseFirestore.instance
+          .collection('donations')
+          .where('expiryAt', isLessThanOrEqualTo: Timestamp.fromDate(now))
+          .get();
+      int sumExpiredQty = 0;
+      for (final d in qExpiredCandidates.docs) {
+        final data = d.data();
+        if (data['completedAt'] != null) continue;
+        final q = data['quantity'];
+        if (q is int)
+          sumExpiredQty += q;
+        else if (q is String)
+          sumExpiredQty += int.tryParse(q) ?? 0;
+        else if (q is double)
+          sumExpiredQty += q.toInt();
+      }
+
       if (mounted) {
         setState(() {
           restaurantsCount = qRes.docs.length;
           ngosCount = qNgo.docs.length;
           totalCompletedQuantity = sumCompletedQty;
           activeDonationQuantity = sumActiveQty;
+          expiredDonationQuantity = sumExpiredQty;
         });
       }
     } catch (e) {
@@ -462,6 +482,48 @@ Food4Need Team
             Text(
               'Total claimed items shown: ${_weeklyCounts.fold<int>(0, (a, b) => a + b)}',
               style: const TextStyle(fontSize: 12, color: Colors.black54),
+            ),
+            const SizedBox(height: 12),
+            const Divider(),
+            const SizedBox(height: 8),
+            const Text(
+              'Expired vs Claimed (total)',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 160,
+              child: (totalCompletedQuantity == 0 && expiredDonationQuantity == 0)
+                  ? Center(
+                      child: Text(
+                        _loadingStats ? 'Loading pie chart...' : 'No expired or claimed data',
+                        style: const TextStyle(color: Colors.black54),
+                      ),
+                    )
+                  : PieChart(
+                      PieChartData(
+                        sectionsSpace: 2,
+                        centerSpaceRadius: 28,
+                        sections: [
+                          PieChartSectionData(
+                            value: totalCompletedQuantity.toDouble(),
+                            color: Colors.green.shade600,
+                            title: '${totalCompletedQuantity}',
+                            radius: 50,
+                            titleStyle: const TextStyle(
+                                fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                          ),
+                          PieChartSectionData(
+                            value: expiredDonationQuantity.toDouble(),
+                            color: Colors.red.shade400,
+                            title: '${expiredDonationQuantity}',
+                            radius: 50,
+                            titleStyle: const TextStyle(
+                                fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                          ),
+                        ],
+                      ),
+                    ),
             ),
           ],
         ),
