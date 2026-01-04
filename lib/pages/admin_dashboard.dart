@@ -45,11 +45,20 @@ class _AdminDashboardState extends State<AdminDashboard> {
   Future<void> _loadStats() async {
     setState(() => _loadingStats = true);
     try {
-      final qRes = await FirebaseFirestore.instance.collection('users').where('role', isEqualTo: 'restaurant').get();
-      final qNgo = await FirebaseFirestore.instance.collection('users').where('role', isEqualTo: 'ngo').get();
+      final qRes = await FirebaseFirestore.instance
+          .collection('users')
+          .where('role', isEqualTo: 'restaurant')
+          .get();
+      final qNgo = await FirebaseFirestore.instance
+          .collection('users')
+          .where('role', isEqualTo: 'ngo')
+          .get();
 
       // completed donations (sum quantities) and collect for weekly chart
-      final qDone = await FirebaseFirestore.instance.collection('donations').where('completedAt', isNotEqualTo: null).get();
+      final qDone = await FirebaseFirestore.instance
+          .collection('donations')
+          .where('completedAt', isNotEqualTo: null)
+          .get();
 
       int sumCompletedQty = 0;
       final now = DateTime.now();
@@ -64,15 +73,22 @@ class _AdminDashboardState extends State<AdminDashboard> {
         final data = d.data();
         final q = data['quantity'];
         int qty = 0;
-        if (q is int) qty = q;
-        else if (q is String) qty = int.tryParse(q) ?? 0;
-        else if (q is double) qty = q.toInt();
+        if (q is int)
+          qty = q;
+        else if (q is String)
+          qty = int.tryParse(q) ?? 0;
+        else if (q is double)
+          qty = q.toInt();
         sumCompletedQty += qty;
 
         final completedTs = data['completedAt'] as Timestamp?;
         if (completedTs != null) {
           final completedDate = completedTs.toDate();
-          final cd = DateTime(completedDate.year, completedDate.month, completedDate.day);
+          final cd = DateTime(
+            completedDate.year,
+            completedDate.month,
+            completedDate.day,
+          );
           final daysAgo = today.difference(cd).inDays; // 0 => today
           if (daysAgo >= 0 && daysAgo <= 6) {
             final idx = 6 - daysAgo; // 0..6 oldest->newest
@@ -82,15 +98,21 @@ class _AdminDashboardState extends State<AdminDashboard> {
       }
 
       // active donations: sum quantities where expiryAt > now AND completedAt == null
-      final qActiveCandidates = await FirebaseFirestore.instance.collection('donations').where('expiryAt', isGreaterThan: Timestamp.fromDate(now)).get();
+      final qActiveCandidates = await FirebaseFirestore.instance
+          .collection('donations')
+          .where('expiryAt', isGreaterThan: Timestamp.fromDate(now))
+          .get();
       int sumActiveQty = 0;
       for (final d in qActiveCandidates.docs) {
         final data = d.data();
         if (data['completedAt'] != null) continue;
         final q = data['quantity'];
-        if (q is int) sumActiveQty += q;
-        else if (q is String) sumActiveQty += int.tryParse(q) ?? 0;
-        else if (q is double) sumActiveQty += q.toInt();
+        if (q is int)
+          sumActiveQty += q;
+        else if (q is String)
+          sumActiveQty += int.tryParse(q) ?? 0;
+        else if (q is double)
+          sumActiveQty += q.toInt();
       }
 
       if (mounted) {
@@ -103,7 +125,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to load stats: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to load stats: $e')));
       }
     } finally {
       if (mounted) setState(() => _loadingStats = false);
@@ -112,33 +136,62 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   Future<void> _approveUser(String userId) async {
     try {
-      await FirebaseFirestore.instance.collection('users').doc(userId).update({'approved': true, 'rejected': false});
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('User approved')));
+      await FirebaseFirestore.instance.collection('users').doc(userId).update({
+        'approved': true,
+        'rejected': false,
+      });
+      if (mounted)
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('User approved')));
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Approve failed: $e')));
+      if (mounted)
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Approve failed: $e')));
     }
   }
 
   Future<void> _rejectUser(String userId) async {
     try {
-      await FirebaseFirestore.instance.collection('users').doc(userId).update({'rejected': true, 'approved': false});
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('User rejected')));
+      await FirebaseFirestore.instance.collection('users').doc(userId).delete();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('User rejected and removed')),
+        );
+      }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Reject failed: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Reject failed: $e')));
+      }
     }
   }
 
   Future<void> _deleteUser(String userId) async {
     try {
       await FirebaseFirestore.instance.collection('users').doc(userId).delete();
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('User deleted')));
+      if (mounted)
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('User deleted')));
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Delete failed: $e')));
+      if (mounted)
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Delete failed: $e')));
     }
   }
 
   void _openUserList(String role, String title) {
-    Navigator.push(context, MaterialPageRoute(builder: (_) => UserListPage(role: role, title: title)));
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => UserListPage(role: role, title: title),
+      ),
+    );
   }
 
   Future<void> _refreshUsers() async {
@@ -154,51 +207,61 @@ class _AdminDashboardState extends State<AdminDashboard> {
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         child: Column(
           children: [
-            LayoutBuilder(builder: (context, constraints) {
-              const spacing = 12.0;
-              const crossAxisCount = 2;
-              final availableWidth = constraints.maxWidth;
-              final itemWidth = (availableWidth - spacing * (crossAxisCount - 1)) / crossAxisCount;
-              final desiredItemHeight = 160.0;
-              final childAspectRatio = itemWidth / desiredItemHeight;
+            LayoutBuilder(
+              builder: (context, constraints) {
+                const spacing = 12.0;
+                const crossAxisCount = 2;
+                final availableWidth = constraints.maxWidth;
+                final itemWidth =
+                    (availableWidth - spacing * (crossAxisCount - 1)) /
+                    crossAxisCount;
+                final desiredItemHeight = 160.0;
+                final childAspectRatio = itemWidth / desiredItemHeight;
 
-              return GridView.count(
-                crossAxisCount: crossAxisCount,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                mainAxisSpacing: spacing,
-                crossAxisSpacing: spacing,
-                childAspectRatio: childAspectRatio,
-                children: [
-                  _statCard(
-                    label: 'Registered Rest.',
-                    value: _loadingStats ? '...' : restaurantsCount.toString(),
-                    icon: Icons.restaurant,
-                    color: const Color(0xfff6e9de),
-                    onTap: () => _openUserList('restaurant', 'Restaurants'),
-                  ),
-                  _statCard(
-                    label: 'Registered NGOs',
-                    value: _loadingStats ? '...' : ngosCount.toString(),
-                    icon: Icons.groups,
-                    color: const Color(0xffe9f6ee),
-                    onTap: () => _openUserList('ngo', 'NGOs'),
-                  ),
-                  _statCard(
-                    label: 'Act. Don. Qty',
-                    value: _loadingStats ? '...' : activeDonationQuantity.toString(),
-                    icon: Icons.hourglass_top,
-                    color: const Color(0xfffff4e6),
-                  ),
-                  _statCard(
-                    label: 'Comp. Don. Qty',
-                    value: _loadingStats ? '...' : totalCompletedQuantity.toString(),
-                    icon: Icons.local_shipping,
-                    color: const Color(0xffe9eef6),
-                  ),
-                ],
-              );
-            }),
+                return GridView.count(
+                  crossAxisCount: crossAxisCount,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  mainAxisSpacing: spacing,
+                  crossAxisSpacing: spacing,
+                  childAspectRatio: childAspectRatio,
+                  children: [
+                    _statCard(
+                      label: 'Registered Rest.',
+                      value: _loadingStats
+                          ? '...'
+                          : restaurantsCount.toString(),
+                      icon: Icons.restaurant,
+                      color: const Color(0xfff6e9de),
+                      onTap: () => _openUserList('restaurant', 'Restaurants'),
+                    ),
+                    _statCard(
+                      label: 'Registered NGOs',
+                      value: _loadingStats ? '...' : ngosCount.toString(),
+                      icon: Icons.groups,
+                      color: const Color(0xffe9f6ee),
+                      onTap: () => _openUserList('ngo', 'NGOs'),
+                    ),
+                    _statCard(
+                      label: 'Act. Don. Qty',
+                      value: _loadingStats
+                          ? '...'
+                          : activeDonationQuantity.toString(),
+                      icon: Icons.hourglass_top,
+                      color: const Color(0xfffff4e6),
+                    ),
+                    _statCard(
+                      label: 'Comp. Don. Qty',
+                      value: _loadingStats
+                          ? '...'
+                          : totalCompletedQuantity.toString(),
+                      icon: Icons.local_shipping,
+                      color: const Color(0xffe9eef6),
+                    ),
+                  ],
+                );
+              },
+            ),
             const SizedBox(height: 16),
             _buildChartCard(),
             const SizedBox(height: 12),
@@ -214,7 +277,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
     // choose at most 4 intervals for clarity
     final interval = max(1, (maxY / 4).ceil());
 
-    final spots = List.generate(_weeklyCounts.length, (i) => FlSpot(i.toDouble(), _weeklyCounts[i].toDouble()));
+    final spots = List.generate(
+      _weeklyCounts.length,
+      (i) => FlSpot(i.toDouble(), _weeklyCounts[i].toDouble()),
+    );
 
     return Card(
       elevation: 2,
@@ -224,12 +290,21 @@ class _AdminDashboardState extends State<AdminDashboard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Completed (claimed) items — last 7 days', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const Text(
+              'Completed (claimed) items — last 7 days',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 8),
             SizedBox(
               height: 220,
               child: _weeklyCounts.every((e) => e == 0)
-                  ? Center(child: Text(_loadingStats ? 'Loading chart...' : 'No completed donations in last 7 days'))
+                  ? Center(
+                      child: Text(
+                        _loadingStats
+                            ? 'Loading chart...'
+                            : 'No completed donations in last 7 days',
+                      ),
+                    )
                   : LineChart(
                       LineChartData(
                         minX: 0,
@@ -240,7 +315,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           show: true,
                           drawVerticalLine: false,
                           horizontalInterval: interval.toDouble(),
-                          getDrawingHorizontalLine: (value) => FlLine(color: Colors.grey.withOpacity(0.15), strokeWidth: 1),
+                          getDrawingHorizontalLine: (value) => FlLine(
+                            color: Colors.grey.withOpacity(0.15),
+                            strokeWidth: 1,
+                          ),
                         ),
                         titlesData: FlTitlesData(
                           bottomTitles: AxisTitles(
@@ -249,10 +327,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
                               reservedSize: 36,
                               getTitlesWidget: (value, meta) {
                                 final idx = value.toInt();
-                                if (idx < 0 || idx >= _weeklyLabels.length) return const SizedBox.shrink();
+                                if (idx < 0 || idx >= _weeklyLabels.length)
+                                  return const SizedBox.shrink();
                                 return Padding(
                                   padding: const EdgeInsets.only(top: 6),
-                                  child: Text(_weeklyLabels[idx], style: const TextStyle(fontSize: 11)),
+                                  child: Text(
+                                    _weeklyLabels[idx],
+                                    style: const TextStyle(fontSize: 11),
+                                  ),
                                 );
                               },
                             ),
@@ -264,12 +346,19 @@ class _AdminDashboardState extends State<AdminDashboard> {
                               reservedSize: 40,
                               getTitlesWidget: (value, meta) {
                                 // show integer labels only
-                                return Text(value.toInt().toString(), style: const TextStyle(fontSize: 11));
+                                return Text(
+                                  value.toInt().toString(),
+                                  style: const TextStyle(fontSize: 11),
+                                );
                               },
                             ),
                           ),
-                          topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                          rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                          topTitles: AxisTitles(
+                            sideTitles: SideTitles(showTitles: false),
+                          ),
+                          rightTitles: AxisTitles(
+                            sideTitles: SideTitles(showTitles: false),
+                          ),
                         ),
                         borderData: FlBorderData(show: false),
                         lineBarsData: [
@@ -279,14 +368,20 @@ class _AdminDashboardState extends State<AdminDashboard> {
                             color: Colors.green.shade600,
                             barWidth: 3,
                             dotData: FlDotData(show: true),
-                            belowBarData: BarAreaData(show: true, color: Colors.green.shade200.withOpacity(0.4)),
+                            belowBarData: BarAreaData(
+                              show: true,
+                              color: Colors.green.shade200.withOpacity(0.4),
+                            ),
                           ),
                         ],
                       ),
                     ),
             ),
             const SizedBox(height: 6),
-            Text('Total claimed items shown: ${_weeklyCounts.fold<int>(0, (a, b) => a + b)}', style: const TextStyle(fontSize: 12, color: Colors.black54)),
+            Text(
+              'Total claimed items shown: ${_weeklyCounts.fold<int>(0, (a, b) => a + b)}',
+              style: const TextStyle(fontSize: 12, color: Colors.black54),
+            ),
           ],
         ),
       ),
@@ -316,9 +411,19 @@ class _AdminDashboardState extends State<AdminDashboard> {
               children: [
                 Icon(icon, size: 28, color: Colors.black54),
                 const SizedBox(height: 8),
-                Text(value, style: const TextStyle(fontSize: 40, fontWeight: FontWeight.bold)),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 40,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const SizedBox(height: 6),
-                Text(label, textAlign: TextAlign.center, style: const TextStyle(fontSize: 14)),
+                Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 14),
+                ),
               ],
             ),
           ),
@@ -331,10 +436,19 @@ class _AdminDashboardState extends State<AdminDashboard> {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance.collection('users').snapshots(),
       builder: (context, snap) {
-        if (snap.hasError) return const Center(child: Text('Error loading users'));
-        if (!snap.hasData) return const Center(child: CircularProgressIndicator());
+        if (snap.hasError)
+          return const Center(child: Text('Error loading users'));
+        if (!snap.hasData)
+          return const Center(child: CircularProgressIndicator());
 
-        final docs = snap.data!.docs.map((d) => {'id': d.id, ...?d.data() as Map<String, dynamic>}).where((m) => m['id'] != _currentUid && (m['role'] == 'restaurant' || m['role'] == 'ngo')).toList();
+        final docs = snap.data!.docs
+            .map((d) => {'id': d.id, ...?d.data() as Map<String, dynamic>})
+            .where(
+              (m) =>
+                  m['id'] != _currentUid &&
+                  (m['role'] == 'restaurant' || m['role'] == 'ngo'),
+            )
+            .toList();
 
         docs.sort((a, b) {
           final aa = a['approved'] == true ? 1 : 0;
@@ -349,8 +463,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
           if (_userFilter == 'approved') return approved;
           return true;
         }).toList();
-
-        if (filtered.isEmpty) return const Center(child: Text('No users found'));
 
         return Column(
           children: [
@@ -374,50 +486,98 @@ class _AdminDashboardState extends State<AdminDashboard> {
               ),
             ),
             Expanded(
-              child: RefreshIndicator(
-                onRefresh: _refreshUsers,
-                child: ListView.separated(
-                  padding: const EdgeInsets.all(12),
-                  separatorBuilder: (_, __) => const Divider(),
-                  itemCount: filtered.length,
-                  itemBuilder: (context, i) {
-                    final u = filtered[i];
-                    final approved = u['approved'] == true;
-                    final role = (u['role'] ?? '').toString();
-                    return Card(
-                      child: ListTile(
-                        title: Text(u['name'] ?? u['email'] ?? 'No name'),
-                        subtitle: Text('${u['email'] ?? '-'} • ${role.toUpperCase()}'),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (!approved) ...[
-                              TextButton(onPressed: () => _approveUser(u['id']), child: const Text('Approve')),
-                              TextButton(onPressed: () => _rejectUser(u['id']), child: const Text('Reject', style: TextStyle(color: Colors.red))),
-                            ] else ...[
-                              PopupMenuButton<String>(
-                                onSelected: (v) {
-                                  FirebaseFirestore.instance.collection('users').doc(u['id']).update({'role': v});
-                                },
-                                itemBuilder: (_) => const [
-                                  PopupMenuItem(value: 'restaurant', child: Text('Set Restaurant')),
-                                  PopupMenuItem(value: 'ngo', child: Text('Set NGO')),
-                                ],
-                                child: const Padding(
-                                  padding: EdgeInsets.symmetric(horizontal: 8.0),
-                                  child: Icon(Icons.more_vert),
-                                ),
+              child: filtered.isEmpty
+                  ? const Center(child: Text('No users found'))
+                  : RefreshIndicator(
+                      onRefresh: _refreshUsers,
+                      child: ListView.separated(
+                        padding: const EdgeInsets.all(12),
+                        separatorBuilder: (_, __) => const Divider(),
+                        itemCount: filtered.length,
+                        itemBuilder: (context, i) {
+                          final u = filtered[i];
+                          final approved = u['approved'] == true;
+                          final role = (u['role'] ?? '').toString();
+
+                          return Card(
+                            child: ListTile(
+                              title: Text(u['name'] ?? u['email'] ?? 'No name'),
+                              subtitle: Text(
+                                '${u['email'] ?? '-'} • ${role.toUpperCase()}',
                               ),
-                              IconButton(icon: const Icon(Icons.delete, color: Colors.red), onPressed: () => _deleteUser(u['id'])),
-                            ]
-                          ],
-                        ),
-                        leading: CircleAvatar(child: Text((u['name'] ?? 'U').toString()[0].toUpperCase())),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (!approved) ...[
+                                    TextButton(
+                                      onPressed: () => _approveUser(u['id']),
+                                      child: const Text('Approve'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () => _rejectUser(u['id']),
+                                      child: const Text(
+                                        'Reject',
+                                        style: TextStyle(color: Colors.red),
+                                      ),
+                                    ),
+                                  ] else ...[
+                                    PopupMenuButton<String>(
+                                      onSelected: (v) {
+                                        FirebaseFirestore.instance
+                                            .collection('users')
+                                            .doc(u['id'])
+                                            .update({'role': v});
+                                      },
+                                      itemBuilder: (_) => const [
+                                        PopupMenuItem(
+                                          value: 'restaurant',
+                                          child: Text('Set Restaurant'),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'ngo',
+                                          child: Text('Set NGO'),
+                                        ),
+                                      ],
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.delete,
+                                        color: Colors.red,
+                                      ),
+                                      onPressed: () => _deleteUser(u['id']),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                              leading: CircleAvatar(
+                                radius: 22,
+                                backgroundColor: Colors.grey.shade300,
+                                backgroundImage:
+                                    (u['profileImageUrl'] != null &&
+                                        (u['profileImageUrl'] as String)
+                                            .isNotEmpty)
+                                    ? NetworkImage(u['profileImageUrl'])
+                                    : null,
+                                child:
+                                    (u['profileImageUrl'] == null ||
+                                        (u['profileImageUrl'] as String)
+                                            .isEmpty)
+                                    ? Text(
+                                        (u['name'] ?? 'U')
+                                            .toString()[0]
+                                            .toUpperCase(),
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : null,
+                              ),
+                            ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
-              ),
+                    ),
             ),
           ],
         );
@@ -427,7 +587,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   @override
   Widget build(BuildContext context) {
-    final title = _selectedIndex == 0 ? 'Admin — Home' : 'Admin — User Verification';
+    final title = _selectedIndex == 0
+        ? 'Admin — Home'
+        : 'Admin — User Verification';
     return Scaffold(
       drawer: Drawer(
         child: SafeArea(
@@ -436,7 +598,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
             children: [
               DrawerHeader(
                 decoration: const BoxDecoration(color: Color(0xffd4a373)),
-                child: const Text('Admin Menu', style: TextStyle(color: Colors.white, fontSize: 18)),
+                child: const Text(
+                  'Admin Menu',
+                  style: TextStyle(color: Colors.white, fontSize: 18),
+                ),
               ),
               ListTile(
                 leading: const Icon(Icons.home),
@@ -487,14 +652,18 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 onTap: () async {
                   Navigator.pop(context);
                   await FirebaseAuth.instance.signOut();
-                  if (mounted) Navigator.pushReplacementNamed(context, "/login");
+                  if (mounted)
+                    Navigator.pushReplacementNamed(context, "/login");
                 },
               ),
             ],
           ),
         ),
       ),
-      appBar: AppBar(title: Text(title), backgroundColor: const Color(0xffd4a373)),
+      appBar: AppBar(
+        title: Text(title),
+        backgroundColor: const Color(0xffd4a373),
+      ),
       body: _selectedIndex == 0 ? _buildHome() : _buildUserVerification(),
     );
   }

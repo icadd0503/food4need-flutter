@@ -17,27 +17,55 @@ class ProfilePage extends StatelessWidget {
         stream: FirebaseFirestore.instance
             .collection("users")
             .doc(uid)
-            .snapshots(), // 🔥 CHANGED HERE
+            .snapshots(),
         builder: (context, snap) {
           if (!snap.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
 
           final data = snap.data!.data() as Map<String, dynamic>;
+          final profileImageUrl = data["profileImageUrl"];
 
           return ListView(
             padding: const EdgeInsets.fromLTRB(20, 20, 20, 90),
             children: [
-              /// AVATAR
+              /// AVATAR + EDIT BUTTON
               Center(
-                child: CircleAvatar(
-                  radius: 45,
-                  backgroundColor: const Color(0xffd4a373),
-                  child: const Icon(
-                    Icons.person,
-                    size: 50,
-                    color: Colors.white,
-                  ),
+                child: Column(
+                  children: [
+                    CircleAvatar(
+                      radius: 45,
+                      backgroundColor: const Color(0xffd4a373),
+                      backgroundImage: profileImageUrl != null
+                          ? NetworkImage(profileImageUrl)
+                          : null,
+                      child: profileImageUrl == null
+                          ? const Icon(
+                              Icons.person,
+                              size: 50,
+                              color: Colors.white,
+                            )
+                          : null,
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    TextButton.icon(
+                      icon: const Icon(Icons.edit, size: 18),
+                      label: const Text("Edit Profile"),
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xffd4a373),
+                      ),
+                      onPressed: () {
+                        Navigator.pushNamed(
+                          context,
+                          role == "restaurant"
+                              ? "/restaurant-profile-edit"
+                              : "/ngo-profile-edit",
+                        );
+                      },
+                    ),
+                  ],
                 ),
               ),
 
@@ -68,6 +96,7 @@ class ProfilePage extends StatelessWidget {
 
               const SizedBox(height: 25),
 
+              /// BOTTOM EDIT BUTTON
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xffd4a373),

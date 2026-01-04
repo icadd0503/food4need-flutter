@@ -7,7 +7,7 @@
     <!-- POST_NOTIFICATIONS is required for Android 13+ -->
 
     <application
-        android:label="flutter_application_1"
+        android:label="Food4Need"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
 

@@ -1,9 +1,14 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/foundation.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:geocoding/geocoding.dart';
 
 class RestaurantProfile extends StatefulWidget {
   const RestaurantProfile({super.key});
@@ -28,6 +33,11 @@ class _RestaurantProfileState extends State<RestaurantProfile> {
   LatLng? selectedLocation;
   GoogleMapController? mapController;
 
+  // ===== PROFILE IMAGE =====
+  File? profileImage;
+  String? profileImageUrl;
+  final ImagePicker _picker = ImagePicker();
+
   @override
   void initState() {
     super.initState();
@@ -48,7 +58,6 @@ class _RestaurantProfileState extends State<RestaurantProfile> {
   Future<void> _loadProfile() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) {
-      // If there is no signed-in user, stop loading to avoid an infinite spinner
       setState(() => loading = false);
       return;
     }
@@ -65,128 +74,110 @@ class _RestaurantProfileState extends State<RestaurantProfile> {
       addressController.text = data["address"] ?? "";
       businessRegNoController.text = data["businessRegNo"] ?? "";
       halal = data["halal"] == true;
+      profileImageUrl = data["profileImageUrl"];
 
-      // Prefer explicit opening/closing time fields (HH:mm) if present
       if (data["openingTime"] != null && data["closingTime"] != null) {
-        try {
-          openTime = _parseTime(data["openingTime"].toString());
-          closeTime = _parseTime(data["closingTime"].toString());
-        } catch (e) {
-          // ignore parse errors and fall back to operatingHours
-        }
-      } else if (data["operatingHours"] != null) {
-        try {
-          final parts = (data["operatingHours"] as String).split(" - ");
-          if (parts.length >= 2) {
-            openTime = _parseTime(parts[0]);
-            closeTime = _parseTime(parts[1]);
-          }
-        } catch (e) {
-          // ignore parse errors and leave times null
-        }
+        openTime = _parseTime(data["openingTime"]);
+        closeTime = _parseTime(data["closingTime"]);
       }
 
       if (data["latitude"] != null && data["longitude"] != null) {
-        final lat = data["latitude"];
-        final lng = data["longitude"];
-        if (lat is num && lng is num) {
-          selectedLocation = LatLng(lat.toDouble(), lng.toDouble());
-        }
+        selectedLocation = LatLng(
+          data["latitude"].toDouble(),
+          data["longitude"].toDouble(),
+        );
       }
     }
 
     setState(() => loading = false);
   }
 
-  TimeOfDay _parseTime(String time) {
-    final t = time.trim();
-    final reg = RegExp(r'(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)?');
-    final match = reg.firstMatch(t);
-    if (match != null) {
-      int hour = int.parse(match.group(1)!);
-      final minute = int.parse(match.group(2)!);
-      final ampm = match.group(3);
-      if (ampm != null) {
-        final isPm = ampm.toLowerCase().contains('pm');
-        if (isPm && hour < 12) hour += 12;
-        if (!isPm && hour == 12) hour = 0;
-      }
-      return TimeOfDay(hour: hour % 24, minute: minute);
-    }
-    // fallback: try parse as HH:mm
+  // ================= AUTO FILL ADDRESS =================
+  Future<void> _fillAddressFromMap(LatLng position) async {
     try {
-      final parts = t.split(':');
-      if (parts.length >= 2) {
-        final hour = int.parse(parts[0]);
-        final minute = int.parse(parts[1]);
-        return TimeOfDay(hour: hour % 24, minute: minute % 60);
+      final placemarks = await placemarkFromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
+
+      if (placemarks.isNotEmpty) {
+        final p = placemarks.first;
+
+        setState(() {
+          addressController.text = [
+            p.street,
+            p.subLocality,
+            p.locality,
+            p.administrativeArea,
+          ].where((e) => e != null && e!.isNotEmpty).join(", ");
+        });
       }
-    } catch (_) {}
-    return TimeOfDay.now();
+    } catch (e) {
+      if (kDebugMode) print("Geocoding error: $e");
+    }
   }
 
-  String _timeTo24String(TimeOfDay t) {
-    final h = t.hour.toString().padLeft(2, '0');
-    final m = t.minute.toString().padLeft(2, '0');
-    return '$h:$m';
+  TimeOfDay _parseTime(String time) {
+    final parts = time.split(":");
+    return TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
   }
 
-  // ================= PICK TIME =================
-  Future<void> _pickTime(bool isOpen) async {
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: isOpen
-          ? (openTime ?? TimeOfDay.now())
-          : (closeTime ?? TimeOfDay.now()),
+  String _timeTo24String(TimeOfDay t) =>
+      "${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}";
+
+  // ================= PICK PROFILE IMAGE =================
+  Future<void> _pickProfileImage() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final uid = user.uid;
+
+    final picked = await _picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 75,
     );
 
-    if (picked != null) {
-      setState(() {
-        if (isOpen) {
-          openTime = picked;
-        } else {
-          closeTime = picked;
-        }
+    if (picked == null) return;
+
+    setState(() => profileImage = File(picked.path));
+
+    try {
+      final ref = FirebaseStorage.instance
+          .ref()
+          .child("profile_pictures")
+          .child(uid)
+          .child("profile.jpg");
+
+      await ref.putFile(profileImage!);
+      final url = await ref.getDownloadURL();
+
+      await FirebaseFirestore.instance.collection("users").doc(uid).update({
+        "profileImageUrl": url,
       });
+
+      setState(() => profileImageUrl = url);
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Profile picture updated")));
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Upload failed: $e")));
     }
   }
 
   // ================= SAVE PROFILE =================
   Future<void> _saveProfile() async {
-    // Provide specific validation messages so user knows why save didn't happen
-    if (selectedLocation == null) {
+    if (selectedLocation == null || openTime == null || closeTime == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please pin restaurant location on the map")),
-      );
-      return;
-    }
-    if (openTime == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please select opening time")),
-      );
-      return;
-    }
-    if (closeTime == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please select closing time")),
+        const SnackBar(content: Text("Please complete all required fields")),
       );
       return;
     }
 
     setState(() => saving = true);
 
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) {
-      setState(() => saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("No signed-in user found")),
-      );
-      return;
-    }
-
-    final hours = "${openTime!.format(context)} - ${closeTime!.format(context)}";
-    final opening24 = _timeTo24String(openTime!);
-    final closing24 = _timeTo24String(closeTime!);
+    final uid = FirebaseAuth.instance.currentUser!.uid;
 
     try {
       await FirebaseFirestore.instance.collection("users").doc(uid).update({
@@ -194,28 +185,22 @@ class _RestaurantProfileState extends State<RestaurantProfile> {
         "phone": phoneController.text.trim(),
         "address": addressController.text.trim(),
         "businessRegNo": businessRegNoController.text.trim(),
-        "operatingHours": hours,
-        "openingTime": opening24,
-        "closingTime": closing24,
+        "openingTime": _timeTo24String(openTime!),
+        "closingTime": _timeTo24String(closeTime!),
         "halal": halal,
         "latitude": selectedLocation!.latitude,
         "longitude": selectedLocation!.longitude,
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Profile updated successfully")),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Profile updated")));
 
-      // Close the page after successful update
-      if (mounted) Navigator.pop(context);
-    } catch (e, st) {
-      // Log to console in debug mode and show an error to the user
-      if (kDebugMode) print("Failed to update profile: $e\n$st");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Failed to update profile: ${e.toString()}")),
-      );
+      Navigator.pop(context);
+    } catch (e) {
+      if (kDebugMode) print(e);
     } finally {
-      if (mounted) setState(() => saving = false);
+      setState(() => saving = false);
     }
   }
 
@@ -235,19 +220,43 @@ class _RestaurantProfileState extends State<RestaurantProfile> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
+            GestureDetector(
+              onTap: _pickProfileImage,
+              child: CircleAvatar(
+                radius: 55,
+                backgroundColor: Colors.grey.shade300,
+                backgroundImage: profileImage != null
+                    ? FileImage(profileImage!)
+                    : (profileImageUrl != null
+                              ? NetworkImage(profileImageUrl!)
+                              : null)
+                          as ImageProvider?,
+                child: profileImage == null && profileImageUrl == null
+                    ? const Icon(
+                        Icons.camera_alt,
+                        size: 40,
+                        color: Colors.white70,
+                      )
+                    : null,
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
             _input(nameController, "Restaurant Name", Icons.store),
             _input(phoneController, "Phone Number", Icons.phone),
-            _input(addressController, "Address", Icons.location_on),
+            _input(
+              addressController,
+              "Address (auto-filled)",
+              Icons.location_on,
+            ),
             _input(
               businessRegNoController,
-              "Business Registration No",
+              "Business Reg No",
               Icons.assignment,
             ),
 
-            const SizedBox(height: 10),
-
             ListTile(
-              leading: const Icon(Icons.schedule),
               title: Text(
                 openTime == null
                     ? "Select Opening Time"
@@ -255,9 +264,7 @@ class _RestaurantProfileState extends State<RestaurantProfile> {
               ),
               onTap: () => _pickTime(true),
             ),
-
             ListTile(
-              leading: const Icon(Icons.schedule),
               title: Text(
                 closeTime == null
                     ? "Select Closing Time"
@@ -267,19 +274,9 @@ class _RestaurantProfileState extends State<RestaurantProfile> {
             ),
 
             SwitchListTile(
-              value: halal,
               title: const Text("Halal Food"),
+              value: halal,
               onChanged: (v) => setState(() => halal = v),
-            ),
-
-            const SizedBox(height: 16),
-
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                "Pin Restaurant Location",
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
             ),
 
             const SizedBox(height: 10),
@@ -296,20 +293,32 @@ class _RestaurantProfileState extends State<RestaurantProfile> {
                   target: selectedLocation ?? const LatLng(5.4164, 100.3327),
                   zoom: 15,
                 ),
-                onTap: (latLng) => setState(() => selectedLocation = latLng),
-                markers: {
-                  if (selectedLocation != null)
-                    Marker(
-                      markerId: const MarkerId("restaurant"),
-                      position: selectedLocation!,
-                      draggable: true,
-                      onDragEnd: (p) => setState(() => selectedLocation = p),
-                    ),
+                onTap: (p) async {
+                  setState(() => selectedLocation = p);
+                  await _fillAddressFromMap(p);
                 },
+                markers: selectedLocation == null
+                    ? {}
+                    : {
+                        Marker(
+                          markerId: const MarkerId("restaurant"),
+                          position: selectedLocation!,
+                        ),
+                      },
               ),
             ),
 
-            const SizedBox(height: 30),
+            const SizedBox(height: 8),
+
+            ElevatedButton.icon(
+              icon: const Icon(Icons.my_location),
+              label: const Text("Auto fill address from map"),
+              onPressed: selectedLocation == null
+                  ? null
+                  : () => _fillAddressFromMap(selectedLocation!),
+            ),
+
+            const SizedBox(height: 20),
 
             SizedBox(
               width: double.infinity,
@@ -323,7 +332,7 @@ class _RestaurantProfileState extends State<RestaurantProfile> {
                     ? const CircularProgressIndicator(color: Colors.white)
                     : const Text(
                         "Save Profile",
-                        style: TextStyle(color: Colors.white, fontSize: 16),
+                        style: TextStyle(color: Colors.white),
                       ),
               ),
             ),
@@ -331,6 +340,18 @@ class _RestaurantProfileState extends State<RestaurantProfile> {
         ),
       ),
     );
+  }
+
+  Future<void> _pickTime(bool isOpen) async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: isOpen
+          ? (openTime ?? TimeOfDay.now())
+          : (closeTime ?? TimeOfDay.now()),
+    );
+    if (picked != null) {
+      setState(() => isOpen ? openTime = picked : closeTime = picked);
+    }
   }
 
   Widget _input(TextEditingController controller, String label, IconData icon) {

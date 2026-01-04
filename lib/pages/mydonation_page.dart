@@ -41,6 +41,13 @@ class RestaurantDonationsPage extends StatelessWidget {
     }
   }
 
+  bool _isActiveStatus(String status) {
+    return status == "available" ||
+        status == "reserved" ||
+        status == "accepted" ||
+        status == "confirmed";
+  }
+
   @override
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser!.uid;
@@ -58,7 +65,11 @@ class RestaurantDonationsPage extends StatelessWidget {
             return const Center(child: CircularProgressIndicator());
           }
 
-          final docs = snapshot.data!.docs;
+          final docs = snapshot.data!.docs.where((doc) {
+            final d = doc.data() as Map<String, dynamic>;
+            final status = d["status"] ?? "available";
+            return _isActiveStatus(status);
+          }).toList();
 
           if (docs.isEmpty) {
             return const Center(
@@ -68,7 +79,7 @@ class RestaurantDonationsPage extends StatelessWidget {
                   Icon(Icons.fastfood, size: 80, color: Colors.grey),
                   SizedBox(height: 10),
                   Text(
-                    "No donations yet 😕",
+                    "No active donations 🍽️",
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   ),
                 ],
@@ -84,11 +95,8 @@ class RestaurantDonationsPage extends StatelessWidget {
               final docId = docs[i].id;
 
               final halal = donation["halal"] == true;
-              String status = donation["status"] ?? "available";
+              final status = donation["status"] ?? "available";
 
-              final ngoId = donation["ngoId"] ?? donation["reservedBy"];
-
-              // ===== EXPIRY LOGIC =====
               bool isExpired = false;
               String expiryText = "";
 
@@ -98,7 +106,6 @@ class RestaurantDonationsPage extends StatelessWidget {
 
                 if (diff.isNegative && status == "available") {
                   isExpired = true;
-                  status = "expired";
                   expiryText = "Expired";
                 } else if (!diff.isNegative) {
                   expiryText =
@@ -109,214 +116,223 @@ class RestaurantDonationsPage extends StatelessWidget {
               final canDelete = status == "available" || status == "expired";
               final canEdit = status == "available";
 
-              return Dismissible(
-                key: Key(docId),
-                direction: canDelete
-                    ? DismissDirection.endToStart
-                    : DismissDirection.none,
-                background: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.red,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  alignment: Alignment.centerRight,
-                  padding: const EdgeInsets.only(right: 20),
-                  child: const Icon(
-                    Icons.delete,
-                    color: Colors.white,
-                    size: 30,
-                  ),
+              return Card(
+                elevation: 3,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                confirmDismiss: (_) async {
-                  if (!canDelete) return false;
-
-                  return await showDialog(
-                    context: context,
-                    builder: (_) => AlertDialog(
-                      title: const Text("Delete Donation"),
-                      content: const Text(
-                        "Are you sure you want to delete this donation?",
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, false),
-                          child: const Text("Cancel"),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, true),
-                          child: const Text(
-                            "Delete",
-                            style: TextStyle(color: Colors.red),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: halal
+                                  ? Colors.green.shade100
+                                  : Colors.red.shade100,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              halal ? "HALAL" : "NON-HALAL",
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: halal ? Colors.green : Colors.red,
+                              ),
+                            ),
                           ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  donation["title"] ?? "",
+                                  style: const TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text("Quantity: ${donation["quantity"]}"),
+                                Text("Pickup Time: ${donation["pickupTime"]}"),
+                                if (expiryText.isNotEmpty)
+                                  Text(
+                                    expiryText,
+                                    style: TextStyle(
+                                      color: isExpired
+                                          ? Colors.red
+                                          : Colors.orange,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+
+                          /// 3-DOT MENU (EDIT + DELETE)
+                          PopupMenuButton<String>(
+                            onSelected: (value) async {
+                              if (value == "edit") {
+                                Navigator.pushNamed(
+                                  context,
+                                  "/edit-donation",
+                                  arguments: docId,
+                                );
+                              }
+
+                              if (value == "delete") {
+                                final confirm = await showDialog<bool>(
+                                  context: context,
+                                  builder: (_) => AlertDialog(
+                                    title: const Text("Delete Donation"),
+                                    content: const Text(
+                                      "Are you sure you want to delete this donation?",
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(context, false),
+                                        child: const Text("Cancel"),
+                                      ),
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(context, true),
+                                        child: const Text(
+                                          "Delete",
+                                          style: TextStyle(color: Colors.red),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+
+                                if (confirm == true) {
+                                  await FirebaseFirestore.instance
+                                      .collection("donations")
+                                      .doc(docId)
+                                      .delete();
+                                }
+                              }
+                            },
+                            itemBuilder: (_) => [
+                              if (canEdit)
+                                const PopupMenuItem(
+                                  value: "edit",
+                                  child: Text("Edit Donation"),
+                                ),
+                              if (canDelete)
+                                const PopupMenuItem(
+                                  value: "delete",
+                                  child: Text(
+                                    "Delete Donation",
+                                    style: TextStyle(color: Colors.red),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 10),
+
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _statusColor(status).withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              _statusIcon(status),
+                              color: _statusColor(status),
+                              size: 18,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              status.toUpperCase(),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: _statusColor(status),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      if (status == "reserved") ...[
+                        const SizedBox(height: 14),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.green,
+                                ),
+                                onPressed: () async {
+                                  await FirebaseFirestore.instance
+                                      .collection("donations")
+                                      .doc(docId)
+                                      .update({"status": "confirmed"});
+                                },
+                                child: const Text("Accept"),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.red,
+                                ),
+                                onPressed: () async {
+                                  await FirebaseFirestore.instance
+                                      .collection("donations")
+                                      .doc(docId)
+                                      .update({
+                                        "status": "available",
+                                        "ngoId": FieldValue.delete(),
+                                        "reservedBy": FieldValue.delete(),
+                                      });
+                                },
+                                child: const Text("Reject"),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
-                    ),
-                  );
-                },
-                onDismissed: (_) {
-                  FirebaseFirestore.instance
-                      .collection("donations")
-                      .doc(docId)
-                      .delete();
-                },
-                child: Card(
-                  elevation: 3,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        /// HALAL BADGE
+
+                      if (status == "confirmed") ...[
+                        const SizedBox(height: 14),
                         Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 4,
-                          ),
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: halal
-                                ? Colors.green.shade100
-                                : Colors.red.shade100,
+                            color: Colors.blue.shade50,
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          child: Text(
-                            halal ? "HALAL" : "NON-HALAL",
+                          child: const Text(
+                            "Waiting for NGO to mark as Delivered",
+                            textAlign: TextAlign.center,
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
-                              color: halal ? Colors.green : Colors.red,
+                              color: Colors.blue,
                             ),
                           ),
                         ),
-
-                        const SizedBox(width: 14),
-
-                        /// DETAILS
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                donation["title"] ?? "",
-                                style: const TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text("Quantity: ${donation["quantity"]}"),
-                              Text("Pickup Time: ${donation["pickupTime"]}"),
-                              if (expiryText.isNotEmpty)
-                                Text(
-                                  expiryText,
-                                  style: TextStyle(
-                                    color: isExpired
-                                        ? Colors.red
-                                        : Colors.orange,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-
-                              const SizedBox(height: 10),
-
-                              /// STATUS BADGE
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: _statusColor(status).withOpacity(0.2),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      _statusIcon(status),
-                                      color: _statusColor(status),
-                                      size: 18,
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      status.toUpperCase(),
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        color: _statusColor(status),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-
-                              /// 🧑 NGO INFO
-                              if (ngoId != null &&
-                                  status != "available" &&
-                                  status != "expired") ...[
-                                const SizedBox(height: 12),
-                                FutureBuilder<DocumentSnapshot>(
-                                  future: FirebaseFirestore.instance
-                                      .collection("users")
-                                      .doc(ngoId)
-                                      .get(),
-                                  builder: (context, ngoSnap) {
-                                    if (!ngoSnap.hasData) {
-                                      return const Text("Loading NGO info...");
-                                    }
-
-                                    final ngo =
-                                        ngoSnap.data!.data()
-                                            as Map<String, dynamic>?;
-
-                                    if (ngo == null) {
-                                      return const Text("NGO info unavailable");
-                                    }
-
-                                    return Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          "Accepted By NGO",
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            color: Color(0xff5a3825),
-                                          ),
-                                        ),
-                                        Text("Name: ${ngo["name"] ?? "-"}"),
-                                        Text("Phone: ${ngo["phone"] ?? "-"}"),
-                                      ],
-                                    );
-                                  },
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-
-                        /// MENU (EDIT KEPT)
-                        PopupMenuButton<String>(
-                          onSelected: (value) {
-                            if (value == "edit") {
-                              Navigator.pushNamed(
-                                context,
-                                "/edit-donation",
-                                arguments: docId,
-                              );
-                            }
-                          },
-                          itemBuilder: (_) => canEdit
-                              ? const [
-                                  PopupMenuItem(
-                                    value: "edit",
-                                    child: Text("Edit Donation"),
-                                  ),
-                                ]
-                              : const [],
-                        ),
                       ],
-                    ),
+                    ],
                   ),
                 ),
               );

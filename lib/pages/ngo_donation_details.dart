@@ -2,10 +2,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'dart:math' show sin, cos, sqrt, atan2, pi;
+import 'dart:math' show sin, cos, sqrt, atan2, pi, min, max;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/foundation.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/services.dart';
 
 class NGODonationDetails extends StatefulWidget {
   final String donationId;
@@ -27,12 +29,15 @@ class _NGODonationDetailsState extends State<NGODonationDetails> {
   LatLng? ngoLoc;
   double? distanceKm;
 
+  GoogleMapController? mapController;
+
   @override
   void initState() {
     super.initState();
     loadDonation();
   }
 
+  /// Load donation, restaurant, and NGO location
   Future<void> loadDonation() async {
     final snap = await FirebaseFirestore.instance
         .collection("donations")
@@ -83,6 +88,7 @@ class _NGODonationDetailsState extends State<NGODonationDetails> {
     setState(() => loading = false);
   }
 
+  /// Haversine distance calculation (km)
   double calculateDistance(lat1, lon1, lat2, lon2) {
     const R = 6371;
     final dLat = _deg(lat2 - lat1);
@@ -97,6 +103,40 @@ class _NGODonationDetailsState extends State<NGODonationDetails> {
 
   double _deg(double deg) => deg * (pi / 180);
 
+  /// Adjust map camera to show both NGO & restaurant
+  void fitMapBounds() {
+    if (mapController == null || restaurantLoc == null || ngoLoc == null)
+      return;
+
+    final bounds = LatLngBounds(
+      southwest: LatLng(
+        min(restaurantLoc!.latitude, ngoLoc!.latitude),
+        min(restaurantLoc!.longitude, ngoLoc!.longitude),
+      ),
+      northeast: LatLng(
+        max(restaurantLoc!.latitude, ngoLoc!.latitude),
+        max(restaurantLoc!.longitude, ngoLoc!.longitude),
+      ),
+    );
+
+    mapController!.animateCamera(CameraUpdate.newLatLngBounds(bounds, 80));
+  }
+
+  /// Try calling phone, fallback to copy
+  Future<void> callOrCopyPhone(String phone) async {
+    final uri = Uri.parse("tel:$phone");
+
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    } else {
+      await Clipboard.setData(ClipboardData(text: phone));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Phone number copied")));
+    }
+  }
+
+  /// Accept donation safely using transaction
   Future<void> acceptDonation() async {
     if (donation == null) return;
 
@@ -152,8 +192,8 @@ class _NGODonationDetailsState extends State<NGODonationDetails> {
     final status = donation!["status"];
     final restName = restaurant?["name"] ?? "Restaurant";
     final restPhone = restaurant?["phone"] ?? "Not provided";
-
-    final String? description = donation!["description"]?.toString().trim();
+    final restImage = restaurant?["profileImageUrl"];
+    final description = donation!["description"]?.toString().trim();
 
     String expiryText = "N/A";
     if (donation!["expiryAt"] != null) {
@@ -175,6 +215,36 @@ class _NGODonationDetailsState extends State<NGODonationDetails> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            const SizedBox(height: 16),
+
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 28,
+                  backgroundColor: Colors.grey.shade300,
+                  backgroundImage: restImage != null
+                      ? NetworkImage(restImage)
+                      : null,
+                  child: restImage == null
+                      ? const Icon(Icons.store, color: Colors.white)
+                      : null,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    restName,
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xff5a3825),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 16),
+
             Text(
               donation!["title"] ?? "",
               style: const TextStyle(
@@ -183,43 +253,23 @@ class _NGODonationDetailsState extends State<NGODonationDetails> {
                 color: Color(0xffd4a373),
               ),
             ),
-            const SizedBox(height: 6),
-            Text("From: $restName", style: const TextStyle(fontSize: 18)),
 
-            /// DESCRIPTION (OPTIONAL)
             if (description != null && description.isNotEmpty) ...[
               const SizedBox(height: 16),
               Card(
-                elevation: 2,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Padding(
                   padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        "Description",
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          color: Color(0xff5a3825),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(description, style: const TextStyle(fontSize: 15)),
-                    ],
-                  ),
+                  child: Text(description),
                 ),
               ),
             ],
 
             const SizedBox(height: 15),
 
-            /// INFO CARD
             Card(
-              elevation: 3,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
               ),
@@ -227,12 +277,19 @@ class _NGODonationDetailsState extends State<NGODonationDetails> {
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   children: [
-                    _infoRow("Quantity", "${donation!["quantity"]}"),
-                    _infoRow("Pickup Time", donation!["pickupTime"]),
-                    _infoRow("Expires In", expiryText),
-                    _infoRow("Status", status),
-                    _infoRow("Phone", restPhone),
-                    const SizedBox(height: 10),
+                    infoRow("Quantity", "${donation!["quantity"]}"),
+                    infoRow("Pickup Time", donation!["pickupTime"]),
+                    infoRow("Expires In", expiryText),
+                    infoRow("Status", status),
+                    GestureDetector(
+                      onTap: () {
+                        if (restPhone != "Not provided") {
+                          callOrCopyPhone(restPhone);
+                        }
+                      },
+                      child: infoRow("Phone", restPhone, green: true),
+                    ),
+                    const SizedBox(height: 8),
                     Align(
                       alignment: Alignment.centerLeft,
                       child: Chip(
@@ -246,26 +303,19 @@ class _NGODonationDetailsState extends State<NGODonationDetails> {
                 ),
               ),
             ),
-
-            const SizedBox(height: 20),
-
-            if (distanceKm != null)
-              Text(
-                "Distance: ${distanceKm!.toStringAsFixed(2)} km",
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
-              ),
-
-            const SizedBox(height: 15),
-
             if (restaurantLoc != null)
               ClipRRect(
                 borderRadius: BorderRadius.circular(16),
                 child: SizedBox(
                   height: 280,
                   child: GoogleMap(
+                    onMapCreated: (c) {
+                      mapController = c;
+                      Future.delayed(
+                        const Duration(milliseconds: 300),
+                        fitMapBounds,
+                      );
+                    },
                     initialCameraPosition: CameraPosition(
                       target: restaurantLoc!,
                       zoom: 15,
@@ -275,6 +325,14 @@ class _NGODonationDetailsState extends State<NGODonationDetails> {
                         markerId: const MarkerId("restaurant"),
                         position: restaurantLoc!,
                       ),
+                      if (ngoLoc != null)
+                        Marker(
+                          markerId: const MarkerId("ngo"),
+                          position: ngoLoc!,
+                          icon: BitmapDescriptor.defaultMarkerWithHue(
+                            BitmapDescriptor.hueAzure,
+                          ),
+                        ),
                     },
                     gestureRecognizers: {
                       Factory<OneSequenceGestureRecognizer>(
@@ -285,9 +343,8 @@ class _NGODonationDetailsState extends State<NGODonationDetails> {
                 ),
               ),
 
-            const SizedBox(height: 25),
-
-            if (status == "available" && expiryText != "Expired")
+            if (status == "available" && expiryText != "Expired") ...[
+              const SizedBox(height: 25),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
@@ -299,31 +356,30 @@ class _NGODonationDetailsState extends State<NGODonationDetails> {
                   ),
                   label: accepting
                       ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text(
-                          "Accept Donation",
-                          style: TextStyle(fontSize: 18),
-                        ),
+                      : const Text("Accept Donation"),
                 ),
               ),
+            ],
+            const SizedBox(height: 24),
           ],
         ),
       ),
     );
   }
 
-  Widget _infoRow(String label, String value) {
+  Widget infoRow(String label, String value, {bool green = false}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: const TextStyle(color: Colors.black54, fontSize: 16),
-          ),
+          Text(label, style: const TextStyle(color: Colors.black54)),
           Text(
             value,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: green ? Colors.green : Colors.black,
+            ),
           ),
         ],
       ),

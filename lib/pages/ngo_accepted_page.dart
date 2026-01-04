@@ -5,6 +5,33 @@ import 'package:firebase_auth/firebase_auth.dart';
 class NGOAcceptedPage extends StatelessWidget {
   const NGOAcceptedPage({super.key});
 
+  DateTime? _buildPickupDateTime(Timestamp createdAt, String pickupTime) {
+    try {
+      final baseDate = createdAt.toDate();
+
+      final time = pickupTime.toUpperCase().trim(); // e.g. 7:00 PM
+      final parts = time.split(" ");
+      final hm = parts[0].split(":");
+
+      int hour = int.parse(hm[0]);
+      int minute = int.parse(hm[1]);
+      final period = parts[1];
+
+      if (period == "PM" && hour != 12) hour += 12;
+      if (period == "AM" && hour == 12) hour = 0;
+
+      return DateTime(
+        baseDate.year,
+        baseDate.month,
+        baseDate.day,
+        hour,
+        minute,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser!.uid;
@@ -13,7 +40,7 @@ class NGOAcceptedPage extends StatelessWidget {
       backgroundColor: const Color(0xfffefae0),
       appBar: AppBar(
         backgroundColor: const Color(0xffd4a373),
-        title: const Text("Accepted Donations"),
+        title: const Text("Donations from Restaurants"),
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
@@ -32,7 +59,7 @@ class NGOAcceptedPage extends StatelessWidget {
           if (docs.isEmpty) {
             return const Center(
               child: Text(
-                "No accepted donations yet.",
+                "No active donations right now",
                 style: TextStyle(fontSize: 18, color: Colors.black54),
               ),
             );
@@ -46,17 +73,53 @@ class NGOAcceptedPage extends StatelessWidget {
               final docId = docs[i].id;
               final status = donation["status"];
 
-              // ✅ OPTION B: AUTO-MARK EXPIRED
-              final expiry = donation["expiryAt"];
-              if (status == "reserved" &&
-                  expiry != null &&
-                  (expiry as Timestamp).toDate().isBefore(DateTime.now())) {
-                FirebaseFirestore.instance
-                    .collection("donations")
-                    .doc(docId)
-                    .update({"status": "expired", "expiredAt": DateTime.now()});
+              /// ===============================
+              /// AUTO-COMPLETE BASED ON PICKUP TIME
+              /// ===============================
+              if (status == "confirmed" &&
+                  donation["pickupTime"] != null &&
+                  donation["createdAt"] != null) {
+                final pickupDateTime = _buildPickupDateTime(
+                  donation["createdAt"],
+                  donation["pickupTime"],
+                );
 
-                return const SizedBox.shrink(); // hide expired
+                if (pickupDateTime != null) {
+                  final autoCompleteTime = pickupDateTime.add(
+                    const Duration(minutes: 30),
+                  );
+
+                  if (DateTime.now().isAfter(autoCompleteTime)) {
+                    FirebaseFirestore.instance
+                        .collection("donations")
+                        .doc(docId)
+                        .update({
+                          "status": "completed",
+                          "completedAt": DateTime.now(),
+                        });
+
+                    return const SizedBox.shrink();
+                  }
+                }
+              }
+
+              /// ===============================
+              /// AUTO-EXPIRE RESERVED
+              /// ===============================
+              if (status == "reserved" && donation["expiryAt"] != null) {
+                final expiry = (donation["expiryAt"] as Timestamp).toDate();
+
+                if (expiry.isBefore(DateTime.now())) {
+                  FirebaseFirestore.instance
+                      .collection("donations")
+                      .doc(docId)
+                      .update({
+                        "status": "expired",
+                        "expiredAt": DateTime.now(),
+                      });
+
+                  return const SizedBox.shrink();
+                }
               }
 
               return Card(
@@ -82,11 +145,11 @@ class NGOAcceptedPage extends StatelessWidget {
                       const SizedBox(height: 6),
 
                       Text(
-                        "Pickup By: ${donation["pickupTime"]}",
+                        "Pickup Time: ${donation["pickupTime"]}",
                         style: const TextStyle(fontSize: 16),
                       ),
 
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 8),
 
                       Chip(
                         label: Text(
@@ -99,11 +162,10 @@ class NGOAcceptedPage extends StatelessWidget {
                             : Colors.green[200],
                       ),
 
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 14),
 
                       Row(
                         children: [
-                          /// DETAILS BUTTON
                           Expanded(
                             child: ElevatedButton(
                               style: ElevatedButton.styleFrom(
@@ -122,7 +184,6 @@ class NGOAcceptedPage extends StatelessWidget {
 
                           const SizedBox(width: 10),
 
-                          /// COLLECTED BUTTON (ONLY IF CONFIRMED)
                           if (status == "confirmed")
                             Expanded(
                               child: ElevatedButton(
@@ -141,13 +202,13 @@ class NGOAcceptedPage extends StatelessWidget {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
                                       content: Text(
-                                        "Donation marked as collected",
+                                        "Donation marked as delivered",
                                       ),
                                     ),
                                   );
                                 },
                                 child: const Text(
-                                  "Collected",
+                                  "Delivered",
                                   style: TextStyle(color: Colors.white),
                                 ),
                               ),

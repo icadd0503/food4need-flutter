@@ -67,19 +67,18 @@ class _NGODashboardState extends State<NGODashboard> {
         .doc(uid)
         .get();
 
-    if (snap.exists) {
-      final data = snap.data();
-      if (data?["latitude"] != null && data?["longitude"] != null) {
-        ngoLoc = LatLng(data!["latitude"], data["longitude"]);
-      }
+    if (snap.exists &&
+        snap.data()?["latitude"] != null &&
+        snap.data()?["longitude"] != null) {
+      ngoLoc = LatLng(snap["latitude"], snap["longitude"]);
     }
   }
 
   // ================= LOGOUT =================
   void _logout() async {
-    bool confirmed = await showDialog(
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (_) => AlertDialog(
         title: const Text("Confirm Logout"),
         content: const Text("Are you sure you want to logout?"),
         actions: [
@@ -95,7 +94,7 @@ class _NGODashboardState extends State<NGODashboard> {
       ),
     );
 
-    if (confirmed) {
+    if (confirmed == true) {
       await FCMService.clearFCMToken();
       await FirebaseAuth.instance.signOut();
       if (mounted) {
@@ -261,171 +260,260 @@ class _NGODashboardState extends State<NGODashboard> {
 
   // ================= HOME =================
   Widget _homePage() {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            "Hi, $_ngoName 👋",
-            style: const TextStyle(
-              fontSize: 26,
-              fontWeight: FontWeight.bold,
-              color: Color(0xffd4a373),
+    return RefreshIndicator(
+      onRefresh: () async {
+        setState(() {});
+      },
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "Hi, $_ngoName 👋",
+              style: const TextStyle(
+                fontSize: 26,
+                fontWeight: FontWeight.bold,
+                color: Color(0xffd4a373),
+              ),
             ),
-          ),
-          const SizedBox(height: 10),
-          const Text("Available food donations"),
-          const SizedBox(height: 15),
+            const SizedBox(height: 10),
+            const Text("Available food donations"),
+            const SizedBox(height: 15),
 
-          Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection("donations")
-                  .where("status", isEqualTo: "available")
-                  .orderBy("createdAt", descending: true)
-                  .snapshots(),
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-
-                final docs = snapshot.data!.docs;
-                final List<int> validIndexes = [];
-
-                for (int i = 0; i < docs.length; i++) {
-                  final d = docs[i].data() as Map<String, dynamic>;
-
-                  // 🔥 ONLY CHANGE: SKIP EXPIRED DONATIONS
-                  final expiry = d["expiryAt"];
-                  if (expiry != null &&
-                      (expiry as Timestamp).toDate().isBefore(DateTime.now())) {
-                    // ✅ OPTION B: auto-mark expired
-                    if (d["status"] == "reserved") {
-                      FirebaseFirestore.instance
-                          .collection("donations")
-                          .doc(docs[i].id)
-                          .update({
-                            "status": "expired",
-                            "expiredAt": DateTime.now(),
-                          });
-                    }
-                    continue;
+            Expanded(
+              child: StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection("donations")
+                    .where("status", isEqualTo: "available")
+                    .orderBy("createdAt", descending: true)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) {
+                    return const Center(child: CircularProgressIndicator());
                   }
 
-                  if (halalFilter && d["halal"] != true) continue;
+                  final docs = snapshot.data!.docs;
+                  final List<int> validIndexes = [];
 
-                  if (ngoLoc != null) {
-                    if (d["latitude"] == null || d["longitude"] == null)
-                      continue;
-
-                    final dist = calculateDistance(
-                      ngoLoc!.latitude,
-                      ngoLoc!.longitude,
-                      d["latitude"],
-                      d["longitude"],
-                    );
-
-                    if (dist > maxDistance) continue;
-                  }
-
-                  validIndexes.add(i);
-                }
-
-                if (validIndexes.isEmpty) {
-                  return const Center(
-                    child: Text(
-                      "No donations match your filter 😕",
-                      style: TextStyle(fontSize: 16, color: Colors.black54),
-                    ),
-                  );
-                }
-
-                return ListView.builder(
-                  itemCount: validIndexes.length,
-                  itemBuilder: (context, index) {
-                    final i = validIndexes[index];
+                  for (int i = 0; i < docs.length; i++) {
                     final d = docs[i].data() as Map<String, dynamic>;
-                    final docId = docs[i].id;
 
-                    double? distanceKm;
-                    if (ngoLoc != null &&
-                        d["latitude"] != null &&
-                        d["longitude"] != null) {
-                      distanceKm = calculateDistance(
+                    final expiry = d["expiryAt"];
+                    if (expiry != null &&
+                        (expiry as Timestamp).toDate().isBefore(
+                          DateTime.now(),
+                        )) {
+                      continue;
+                    }
+
+                    if (halalFilter && d["halal"] != true) continue;
+
+                    if (ngoLoc != null) {
+                      if (d["latitude"] == null || d["longitude"] == null)
+                        continue;
+
+                      final dist = calculateDistance(
                         ngoLoc!.latitude,
                         ngoLoc!.longitude,
                         d["latitude"],
                         d["longitude"],
                       );
+
+                      if (dist > maxDistance) continue;
                     }
 
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: ListTile(
-                        leading: const CircleAvatar(
-                          backgroundColor: Color(0xfffaedcd),
-                          child: Icon(Icons.fastfood, color: Color(0xffd4a373)),
-                        ),
-                        title: Text(d["title"] ?? ""),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: d["halal"] == true
-                                    ? Colors.green[100]
-                                    : Colors.red[100],
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                d["halal"] == true ? "Halal" : "Non-Halal",
-                                style: TextStyle(
-                                  color: d["halal"] == true
-                                      ? Colors.green[800]
-                                      : Colors.red[800],
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text("Qty: ${d["quantity"]}"),
-                            Text("Pickup: ${d["pickupTime"]}"),
-                            if (distanceKm != null)
-                              Text(
-                                "Distance: ${distanceKm.toStringAsFixed(2)} km",
-                              ),
-                          ],
-                        ),
-                        trailing: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xffd4a373),
-                          ),
-                          child: const Text("View"),
-                          onPressed: () {
-                            Navigator.pushNamed(
-                              context,
-                              "/ngo-donation-details",
-                              arguments: docId,
-                            );
-                          },
-                        ),
+                    validIndexes.add(i);
+                  }
+
+                  if (validIndexes.isEmpty) {
+                    return const Center(
+                      child: Text(
+                        "No donations match your filter 😕",
+                        style: TextStyle(fontSize: 16, color: Colors.black54),
                       ),
                     );
-                  },
-                );
-              },
+                  }
+
+                  return ListView.builder(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    itemCount: validIndexes.length,
+                    itemBuilder: (context, index) {
+                      final i = validIndexes[index];
+                      final d = docs[i].data() as Map<String, dynamic>;
+                      final docId = docs[i].id;
+
+                      double? distanceKm;
+                      if (ngoLoc != null &&
+                          d["latitude"] != null &&
+                          d["longitude"] != null) {
+                        distanceKm = calculateDistance(
+                          ngoLoc!.latitude,
+                          ngoLoc!.longitude,
+                          d["latitude"],
+                          d["longitude"],
+                        );
+                      }
+
+                      return FutureBuilder<DocumentSnapshot>(
+                        future: FirebaseFirestore.instance
+                            .collection("users")
+                            .doc(d["restaurantId"])
+                            .get(),
+                        builder: (context, restSnap) {
+                          final rest =
+                              restSnap.data?.data() as Map<String, dynamic>?;
+
+                          // ✅ ONLY UI CHANGED BELOW
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            elevation: 3,
+                            child: Padding(
+                              padding: const EdgeInsets.all(14),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      CircleAvatar(
+                                        radius: 22,
+                                        backgroundColor: Colors.grey.shade300,
+                                        backgroundImage:
+                                            rest?["profileImageUrl"] != null
+                                            ? NetworkImage(
+                                                rest!["profileImageUrl"],
+                                              )
+                                            : null,
+                                        child: rest?["profileImageUrl"] == null
+                                            ? const Icon(
+                                                Icons.store,
+                                                color: Colors.white,
+                                              )
+                                            : null,
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Text(
+                                          rest?["name"] ?? "Restaurant",
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+
+                                  const SizedBox(height: 10),
+
+                                  Text(
+                                    d["title"] ?? "",
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+
+                                  const SizedBox(height: 6),
+
+                                  Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: d["halal"] == true
+                                              ? Colors.green[100]
+                                              : Colors.red[100],
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          d["halal"] == true
+                                              ? "Halal"
+                                              : "Non-Halal",
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                            color: d["halal"] == true
+                                                ? Colors.green[800]
+                                                : Colors.red[800],
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      if (distanceKm != null)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.blue[50],
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            "${distanceKm.toStringAsFixed(1)} km",
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                              color: Colors.blue,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+
+                                  const SizedBox(height: 8),
+
+                                  Text("Quantity: ${d["quantity"]}"),
+                                  Text("Pickup: ${d["pickupTime"]}"),
+
+                                  const SizedBox(height: 12),
+
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: ElevatedButton(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(
+                                          0xffd4a373,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            10,
+                                          ),
+                                        ),
+                                      ),
+                                      onPressed: () {
+                                        Navigator.pushNamed(
+                                          context,
+                                          "/ngo-donation-details",
+                                          arguments: docId,
+                                        );
+                                      },
+                                      child: const Text("View Donation"),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  );
+                },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
