@@ -891,7 +891,7 @@ Future<void> _generateAndDownloadPdf() async {
               scrollDirection: Axis.horizontal,
               child: SizedBox(
                 width: chartWidth,
-                height: 220,
+                height: 280,
                 child: (is7Days
                     ? LineChart(
                       LineChartData(
