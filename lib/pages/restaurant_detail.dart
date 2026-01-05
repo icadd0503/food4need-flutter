@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:fl_chart/fl_chart.dart';
+import 'package:intl/intl.dart';
 
 class RestaurantDetail extends StatefulWidget {
   final String restaurantId;
@@ -21,15 +23,12 @@ class _RestaurantDetailState extends State<RestaurantDetail> {
   }
 
   String _donationStatus(Map<String, dynamic> d) {
-    final completed = d['completedAt'] != null;
+    if (d['completedAt'] != null) return 'Completed';
     final expiry = d['expiryAt'] as Timestamp?;
-    final expired = expiry != null && expiry.toDate().isBefore(DateTime.now());
-    if (completed) return 'Completed';
-    if (expired) return 'Expired';
+    if (expiry != null && expiry.toDate().isBefore(DateTime.now())) return 'Expired';
     return 'Active';
   }
 
-  // find potential NGO identifier from donation document
   String? _findNgoId(Map<String, dynamic> d) {
     final candidates = ['ngoId', 'claimedBy', 'reservedBy', 'receiverId', 'reservedNgoId'];
     for (final k in candidates) {
@@ -42,81 +41,220 @@ class _RestaurantDetailState extends State<RestaurantDetail> {
 
   @override
   Widget build(BuildContext context) {
-    final userDoc = FirebaseFirestore.instance.collection('users').doc(widget.restaurantId);
-    final donationsQuery = FirebaseFirestore.instance
-        .collection('donations')
-        .where('restaurantId', isEqualTo: widget.restaurantId)
-        .orderBy('createdAt', descending: true);
+    final DateTime sevenDaysAgo = DateTime.now().subtract(const Duration(days: 7));
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Restaurant'), backgroundColor: const Color(0xffd4a373)),
+      appBar: AppBar(
+        title: const Text('Restaurant Details'),
+        backgroundColor: const Color(0xffd4a373),
+        elevation: 0,
+      ),
       body: StreamBuilder<DocumentSnapshot>(
-        stream: userDoc.snapshots(),
+        stream: FirebaseFirestore.instance.collection('users').doc(widget.restaurantId).snapshots(),
         builder: (context, userSnap) {
-          if (userSnap.hasError) return const Center(child: Text('Error loading restaurant'));
           if (!userSnap.hasData) return const Center(child: CircularProgressIndicator());
-          final user = userSnap.data!;
-          final u = user.data() as Map<String, dynamic>? ?? {};
-          return Column(
-            children: [
-              ListTile(
-                title: Text(u['name'] ?? 'No name'),
-                subtitle: Text(u['email'] ?? '-'),
-                leading: CircleAvatar(child: Text((u['name'] ?? 'R').toString()[0].toUpperCase())),
-              ),
-              const Divider(),
-              Expanded(
-                child: StreamBuilder<QuerySnapshot>(
-                  stream: donationsQuery.snapshots(),
-                  builder: (context, snap) {
-                    if (snap.hasError) return const Center(child: Text('Error loading donations'));
-                    if (!snap.hasData) return const Center(child: CircularProgressIndicator());
-                    final docs = snap.data!.docs;
-                    if (docs.isEmpty) return const Center(child: Text('No donations posted'));
-                    return ListView.separated(
-                      padding: const EdgeInsets.all(12),
-                      separatorBuilder: (_, __) => const Divider(),
-                      itemCount: docs.length,
-                      itemBuilder: (context, i) {
-                        final d = docs[i].data() as Map<String, dynamic>;
-                        final status = _donationStatus(d);
-                        final qty = d['quantity']?.toString() ?? '-';
-                        final title = d['title'] ?? d['details'] ?? 'Donation';
-                        final explicitNgoName = d['ngoName']?.toString();
-                        final ngoId = _findNgoId(d);
+          final u = userSnap.data!.data() as Map<String, dynamic>? ?? {};
 
-                        Widget claimedWidget = const SizedBox.shrink();
-                        if (explicitNgoName != null && explicitNgoName.isNotEmpty) {
-                          claimedWidget = Text('Claimed by: $explicitNgoName');
-                        } else if (ngoId != null && ngoId.isNotEmpty) {
-                          claimedWidget = FutureBuilder<String>(
-                            future: _getNgoName(ngoId),
-                            builder: (ctx, s) {
-                              if (s.connectionState == ConnectionState.waiting) return const Text('Claimed by: Loading...');
-                              if (s.hasError) return Text('Claimed by: $ngoId');
-                              return Text('Claimed by: ${s.data}');
+          return StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('donations')
+                .where('restaurantId', isEqualTo: widget.restaurantId)
+                .orderBy('createdAt', descending: true)
+                .snapshots(),
+            builder: (context, donationSnap) {
+              if (donationSnap.hasError) return Center(child: Text('Error: ${donationSnap.error}'));
+              if (!donationSnap.hasData) return const Center(child: CircularProgressIndicator());
+
+              final allDocs = donationSnap.data!.docs;
+
+              Map<String, double> dailyTotals = {};
+              List<String> last7DaysLabels = [];
+              for (int i = 6; i >= 0; i--) {
+                String date = DateFormat('MM/dd').format(DateTime.now().subtract(Duration(days: i)));
+                dailyTotals[date] = 0.0;
+                last7DaysLabels.add(date);
+              }
+
+              double maxDonationValue = 0;
+              for (var doc in allDocs) {
+                final data = doc.data() as Map<String, dynamic>;
+                final Timestamp? ts = data['createdAt'] as Timestamp?;
+                if (ts != null) {
+                  DateTime date = ts.toDate();
+                  if (date.isAfter(sevenDaysAgo)) {
+                    String formattedDate = DateFormat('MM/dd').format(date);
+                    if (dailyTotals.containsKey(formattedDate)) {
+                      double qty = double.tryParse(data['quantity']?.toString() ?? '0') ?? 0;
+                      dailyTotals[formattedDate] = dailyTotals[formattedDate]! + qty;
+                      if (dailyTotals[formattedDate]! > maxDonationValue) {
+                        maxDonationValue = dailyTotals[formattedDate]!;
+                      }
+                    }
+                  }
+                }
+              }
+
+              List<FlSpot> spots = [];
+              for (int i = 0; i < last7DaysLabels.length; i++) {
+                spots.add(FlSpot(i.toDouble(), dailyTotals[last7DaysLabels[i]]!));
+              }
+
+              double calculatedMaxY = maxDonationValue == 0 ? 5 : maxDonationValue * 1.2;
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    color: const Color(0xffd4a373),
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: ListTile(
+                      title: Text(u['name'] ?? 'No name', 
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: Colors.white)),
+                      subtitle: Text(u['email'] ?? '-', style: const TextStyle(color: Colors.white70)),
+                      leading: CircleAvatar(
+                        backgroundColor: Colors.white,
+                        child: Text((u['name'] ?? 'R').toString()[0].toUpperCase(), 
+                          style: const TextStyle(color: Color(0xffd4a373), fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                  ),
+
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+                    child: Text("Donation Performance (7 Days)", 
+                      style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey)),
+                  ),
+
+                  Container(
+                    height: 200,
+                    padding: const EdgeInsets.fromLTRB(10, 10, 25, 10),
+                    child: LineChart(
+                      LineChartData(
+                        minY: 0,
+                        maxY: calculatedMaxY,
+                        lineTouchData: LineTouchData(
+                          touchTooltipData: LineTouchTooltipData(
+                            getTooltipColor: (touchedSpot) => Colors.blueGrey.withOpacity(0.8),
+                            getTooltipItems: (List<LineBarSpot> touchedSpots) {
+                              return touchedSpots.map((spot) {
+                                return LineTooltipItem(
+                                  '${spot.y.toInt()} items',
+                                  const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                );
+                              }).toList();
                             },
-                          );
-                        }
-
-                        return ListTile(
-                          title: Text(title),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Qty: $qty • $status'),
-                              if ((explicitNgoName?.isNotEmpty ?? false) || (ngoId != null)) const SizedBox(height: 6),
-                              if ((explicitNgoName?.isNotEmpty ?? false) || (ngoId != null)) claimedWidget,
-                            ],
                           ),
-                          trailing: d['expiryAt'] != null ? Text((d['expiryAt'] as Timestamp).toDate().toLocal().toString().split(' ')[0]) : null,
-                        );
-                      },
-                    );
-                  },
-                ),
-              ),
-            ],
+                        ),
+                        gridData: FlGridData(
+                          show: true,
+                          drawVerticalLine: false,
+                          getDrawingHorizontalLine: (value) => FlLine(
+                            color: Colors.grey.withOpacity(0.1),
+                            strokeWidth: 1,
+                          ),
+                        ),
+                        titlesData: FlTitlesData(
+                          bottomTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              getTitlesWidget: (val, _) {
+                                int idx = val.toInt();
+                                if (idx < 0 || idx >= last7DaysLabels.length) return const Text('');
+                                // --- FIXED LINE BELOW ---
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 8.0), 
+                                  child: Text(last7DaysLabels[idx], style: const TextStyle(fontSize: 10)),
+                                );
+                              },
+                            ),
+                          ),
+                          leftTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true, 
+                              reservedSize: 35,
+                              getTitlesWidget: (value, meta) {
+                                if (value % 1 != 0) return Container();
+                                return Text(value.toInt().toString(), style: const TextStyle(fontSize: 10));
+                              },
+                            ),
+                          ),
+                          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                        ),
+                        borderData: FlBorderData(
+                          show: true, 
+                          border: Border(
+                            bottom: BorderSide(color: Colors.grey.shade300),
+                            left: BorderSide(color: Colors.grey.shade300),
+                          ),
+                        ),
+                        lineBarsData: [
+                          LineChartBarData(
+                            spots: spots,
+                            isCurved: true,
+                            color: const Color(0xffd4a373),
+                            barWidth: 4,
+                            isStrokeCapRound: true,
+                            dotData: const FlDotData(show: true),
+                            belowBarData: BarAreaData(
+                              show: true, 
+                              color: const Color(0xffd4a373).withOpacity(0.15),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const Divider(),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                    child: Text("Recent Donation Activity", 
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  ),
+
+                  Expanded(
+                    child: allDocs.isEmpty
+                        ? const Center(child: Text('No donations posted yet'))
+                        : ListView.separated(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            separatorBuilder: (_, __) => const Divider(),
+                            itemCount: allDocs.length,
+                            itemBuilder: (context, i) {
+                              final d = allDocs[i].data() as Map<String, dynamic>;
+                              final status = _donationStatus(d);
+                              final qty = d['quantity']?.toString() ?? '0';
+                              final title = d['title'] ?? d['details'] ?? 'Donation';
+                              final ngoId = _findNgoId(d);
+
+                              return ListTile(
+                                title: Text(title, style: const TextStyle(fontWeight: FontWeight.w500)),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Qty: $qty • $status', 
+                                      style: TextStyle(color: status == 'Active' ? Colors.green : Colors.grey)),
+                                    if (ngoId != null)
+                                      FutureBuilder<String>(
+                                        future: _getNgoName(ngoId),
+                                        builder: (context, s) => Text(
+                                          'Claimed by: ${s.data ?? "..."}',
+                                          style: const TextStyle(fontSize: 12, color: Colors.blueGrey, fontStyle: FontStyle.italic),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                trailing: d['createdAt'] != null
+                                    ? Text(DateFormat('MMM dd, yyyy').format((d['createdAt'] as Timestamp).toDate()),
+                                        style: const TextStyle(fontSize: 12, color: Colors.grey))
+                                    : null,
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              );
+            },
           );
         },
       ),
