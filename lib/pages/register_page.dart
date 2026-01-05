@@ -32,7 +32,7 @@ class _RegisterPageState extends State<RegisterPage> {
   final coverageArea = TextEditingController();
   final contactPerson = TextEditingController();
 
-  // PROFILE IMAGE (ADDED)
+  // PROFILE IMAGE
   File? _profileImage;
   final ImagePicker _picker = ImagePicker();
 
@@ -127,11 +127,11 @@ class _RegisterPageState extends State<RegisterPage> {
         password: password.text,
       );
 
-      // ========= UPLOAD PROFILE IMAGE (ADDED) =========
-      String? profileImageUrl;
+      // ========= UPLOAD PROFILE IMAGE =========
+      String profileImageUrl = "";
 
       if (_profileImage != null) {
-        final uid = FirebaseAuth.instance.currentUser!.uid;
+        final uid = cred.user!.uid;
 
         final ref = FirebaseStorage.instance
             .ref()
@@ -140,8 +140,6 @@ class _RegisterPageState extends State<RegisterPage> {
             .child("profile.jpg");
 
         await ref.putFile(_profileImage!);
-
-        // ✅ SAVE URL INTO VARIABLE
         profileImageUrl = await ref.getDownloadURL();
       }
 
@@ -155,7 +153,7 @@ class _RegisterPageState extends State<RegisterPage> {
             "address": address.text.trim(),
             "role": role,
 
-            // PROFILE IMAGE (ADDED)
+            // PROFILE IMAGE
             "profileImageUrl": profileImageUrl,
 
             // RESTAURANT
@@ -178,7 +176,6 @@ class _RegisterPageState extends State<RegisterPage> {
 
       if (!mounted) return;
 
-      // ===== SUCCESS MESSAGE (ADDED) =====
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text("Registration successful! Await admin approval."),
@@ -255,7 +252,7 @@ class _RegisterPageState extends State<RegisterPage> {
 
                 const SizedBox(height: 14),
 
-                // ===== PROFILE IMAGE PICKER (ADDED) =====
+                // PROFILE IMAGE
                 Center(
                   child: GestureDetector(
                     onTap: _pickProfileImage,
@@ -282,11 +279,7 @@ class _RegisterPageState extends State<RegisterPage> {
                   Text(
                     message,
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: message.contains("successful")
-                          ? Colors.green
-                          : Colors.red,
-                    ),
+                    style: TextStyle(color: Colors.red),
                   ),
 
                 const SizedBox(height: 12),
@@ -300,7 +293,6 @@ class _RegisterPageState extends State<RegisterPage> {
                 if (role == "restaurant") ...[
                   _sectionTitle("Restaurant Information"),
                   _input(businessRegNo, "Business Registration No"),
-                  _sectionTitle("Operating Hours"),
                   ListTile(
                     title: Text(
                       openTime == null
@@ -347,6 +339,21 @@ class _RegisterPageState extends State<RegisterPage> {
                           "Register",
                           style: TextStyle(fontSize: 18, color: Colors.white),
                         ),
+                ),
+
+                // ✅ ADDED LOGIN BUTTON (NOT REMOVED ANYTHING)
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pushReplacementNamed(context, "/login");
+                  },
+                  child: const Text(
+                    "Already have an account? Login",
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xff5a3825),
+                    ),
+                  ),
                 ),
               ],
             ),

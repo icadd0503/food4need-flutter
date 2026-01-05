@@ -7,6 +7,7 @@ import '../pages/mydonation_page.dart';
 import '../pages/restaurant_history_page.dart';
 import '../pages/profile_page.dart';
 import '../services/fcm_service.dart';
+import '../pages/chat_list_page.dart';
 
 class RestaurantDashboard extends StatefulWidget {
   const RestaurantDashboard({super.key});
@@ -32,6 +33,13 @@ class _RestaurantDashboardState extends State<RestaurantDashboard> {
     FirebaseMessaging.onMessage.listen((message) {});
   }
 
+  // ================= PULL TO REFRESH =================
+  Future<void> _onRefresh() async {
+    await _loadUser();
+    await _loadStats();
+    setState(() {});
+  }
+
   // ================= USER =================
   Future<void> _loadUser() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -49,7 +57,7 @@ class _RestaurantDashboardState extends State<RestaurantDashboard> {
     }
   }
 
-  // ================= STATS (FIXED) =================
+  // ================= STATS =================
   Future<void> _loadStats() async {
     final uid = FirebaseAuth.instance.currentUser!.uid;
 
@@ -90,10 +98,41 @@ class _RestaurantDashboardState extends State<RestaurantDashboard> {
 
   // ================= CONFIRM =================
   Future<void> _confirmDonation(String donationId) async {
-    await FirebaseFirestore.instance
+    final donationRef = FirebaseFirestore.instance
         .collection("donations")
-        .doc(donationId)
-        .update({"status": "completed", "completedAt": Timestamp.now()});
+        .doc(donationId);
+
+    await donationRef.update({
+      "status": "completed",
+      "completedAt": Timestamp.now(),
+    });
+
+    final snap = await donationRef.get();
+    final data = snap.data() as Map<String, dynamic>;
+
+    final restaurantId = data["restaurantId"];
+    final ngoId = data["ngoId"];
+    final title = data["title"] ?? "Donation";
+
+    if (ngoId != null) {
+      final chatRef = FirebaseFirestore.instance
+          .collection("chats")
+          .doc(donationId);
+
+      final chatSnap = await chatRef.get();
+
+      if (!chatSnap.exists) {
+        await chatRef.set({
+          "donationId": donationId,
+          "restaurantId": restaurantId,
+          "ngoId": ngoId,
+          "participants": [restaurantId, ngoId],
+          "lastMessage": 'Chat started for "$title"',
+          "lastMessageAt": Timestamp.now(),
+          "createdAt": Timestamp.now(),
+        });
+      }
+    }
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text("Donation marked as completed")),
@@ -139,13 +178,81 @@ class _RestaurantDashboardState extends State<RestaurantDashboard> {
 
   @override
   Widget build(BuildContext context) {
+    final myUid = FirebaseAuth.instance.currentUser!.uid;
+
     return Scaffold(
       backgroundColor: const Color(0xfffefae0),
-
       appBar: AppBar(
         backgroundColor: const Color(0xffd4a373),
         title: const Text("Food4Need", style: TextStyle(color: Colors.white)),
         actions: [
+          /// ✅ MESSAGE ICON WITH UNREAD BADGE (ONLY CHANGE)
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('chats')
+                .where('participants', arrayContains: myUid)
+                .snapshots(),
+            builder: (context, snapshot) {
+              int unreadTotal = 0;
+
+              if (snapshot.hasData) {
+                for (var chat in snapshot.data!.docs) {
+                  FirebaseFirestore.instance
+                      .collection('chats')
+                      .doc(chat.id)
+                      .collection('messages')
+                      .where('senderId', isNotEqualTo: myUid)
+                      .get()
+                      .then((msgs) {
+                        for (var m in msgs.docs) {
+                          final data = m.data() as Map<String, dynamic>;
+                          final seenBy = List<String>.from(
+                            data["seenBy"] ?? [],
+                          );
+                          if (!seenBy.contains(myUid)) {
+                            unreadTotal++;
+                          }
+                        }
+                      });
+                }
+              }
+
+              return Stack(
+                children: [
+                  IconButton(
+                    icon: const Icon(
+                      Icons.chat_bubble_outline,
+                      color: Colors.white,
+                    ),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const ChatListPage()),
+                      );
+                    },
+                  ),
+                  if (unreadTotal > 0)
+                    Positioned(
+                      right: 6,
+                      top: 6,
+                      child: CircleAvatar(
+                        radius: 9,
+                        backgroundColor: Colors.red,
+                        child: Text(
+                          unreadTotal.toString(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+
           PopupMenuButton(
             onSelected: (value) {
               if (value == "logout") _logout();
@@ -157,7 +264,10 @@ class _RestaurantDashboardState extends State<RestaurantDashboard> {
         ],
       ),
 
-      body: IndexedStack(index: _index, children: _pages),
+      body: RefreshIndicator(
+        onRefresh: _onRefresh,
+        child: IndexedStack(index: _index, children: _pages),
+      ),
 
       floatingActionButton: _index == 0
           ? FloatingActionButton.extended(
@@ -193,6 +303,7 @@ class _RestaurantDashboardState extends State<RestaurantDashboard> {
     final formattedDate = "${today.day}-${today.month}-${today.year}";
 
     return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(18, 18, 18, 90),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -210,7 +321,6 @@ class _RestaurantDashboardState extends State<RestaurantDashboard> {
             "Today: $formattedDate",
             style: const TextStyle(color: Colors.black54),
           ),
-
           const SizedBox(height: 25),
 
           loadingStats
@@ -225,7 +335,6 @@ class _RestaurantDashboardState extends State<RestaurantDashboard> {
                 ),
 
           const SizedBox(height: 30),
-
           const Text(
             "Recent Activity",
             style: TextStyle(
@@ -234,7 +343,6 @@ class _RestaurantDashboardState extends State<RestaurantDashboard> {
               color: Color(0xff5a3825),
             ),
           ),
-
           const SizedBox(height: 8),
           _recentActivity(),
         ],
@@ -281,7 +389,6 @@ class _RestaurantDashboardState extends State<RestaurantDashboard> {
         if (!snapshot.hasData) return const Text("Loading...");
 
         final docs = snapshot.data!.docs;
-
         if (docs.isEmpty) return const Text("No recent activity yet.");
 
         return Column(
@@ -304,15 +411,15 @@ class _RestaurantDashboardState extends State<RestaurantDashboard> {
                 leading: const Icon(Icons.fastfood, color: Color(0xffd4a373)),
                 title: Text(data["title"] ?? ""),
                 subtitle: Text("Status: $status"),
-                trailing: status == "reserved"
-                    ? ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
-                        ),
-                        onPressed: () => _confirmDonation(d.id),
-                        child: const Text("Confirm"),
-                      )
-                    : null,
+                trailing: Text(
+                  status.toUpperCase(),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: status == "reserved"
+                        ? Colors.orange
+                        : Colors.black54,
+                  ),
+                ),
               ),
             );
           }).toList(),

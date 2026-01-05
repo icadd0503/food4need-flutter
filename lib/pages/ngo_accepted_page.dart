@@ -74,17 +74,19 @@ class NGOAcceptedPage extends StatelessWidget {
               final status = donation["status"];
 
               /// ===============================
-              /// AUTO-COMPLETE BASED ON PICKUP TIME
+              /// AUTO-DELIVER IF NGO FORGOT TO CLICK
               /// ===============================
               if (status == "confirmed" &&
                   donation["pickupTime"] != null &&
-                  donation["createdAt"] != null) {
+                  donation["createdAt"] != null &&
+                  donation["completedAt"] == null) {
                 final pickupDateTime = _buildPickupDateTime(
                   donation["createdAt"],
                   donation["pickupTime"],
                 );
 
                 if (pickupDateTime != null) {
+                  // ⏱ Grace period after pickup time
                   final autoCompleteTime = pickupDateTime.add(
                     const Duration(minutes: 30),
                   );
@@ -98,6 +100,17 @@ class NGOAcceptedPage extends StatelessWidget {
                           "completedAt": DateTime.now(),
                         });
 
+                    FirebaseFirestore.instance
+                        .collection("chats")
+                        .doc(docId)
+                        .update({
+                          "donationStatus": "completed",
+                          "lastMessage":
+                              "Donation automatically marked as delivered",
+                          "lastMessageAt": Timestamp.now(),
+                        });
+
+                    // Remove card immediately from UI
                     return const SizedBox.shrink();
                   }
                 }
@@ -197,6 +210,14 @@ class NGOAcceptedPage extends StatelessWidget {
                                       .update({
                                         "status": "completed",
                                         "completedAt": DateTime.now(),
+                                      });
+                                  await FirebaseFirestore.instance
+                                      .collection("chats")
+                                      .doc(docId)
+                                      .update({
+                                        "donationStatus": "completed",
+                                        "lastMessage": "Donation completed",
+                                        "lastMessageAt": Timestamp.now(),
                                       });
 
                                   ScaffoldMessenger.of(context).showSnackBar(

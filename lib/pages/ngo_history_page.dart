@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 class NGOHistoryPage extends StatelessWidget {
   const NGOHistoryPage({super.key});
@@ -11,6 +12,7 @@ class NGOHistoryPage extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: const Color(0xfffefae0),
+
       appBar: AppBar(
         backgroundColor: const Color(0xffd4a373),
         title: const Text(
@@ -24,9 +26,10 @@ class NGOHistoryPage extends StatelessWidget {
         stream: FirebaseFirestore.instance
             .collection("donations")
             .where("status", isEqualTo: "completed")
-            .where("ngoId", isEqualTo: uid) // ✅ MATCH NGOAcceptedPage
+            .where("ngoId", isEqualTo: uid)
             .orderBy("completedAt", descending: true)
             .snapshots(),
+
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
@@ -47,14 +50,16 @@ class NGOHistoryPage extends StatelessWidget {
           return ListView.builder(
             padding: const EdgeInsets.all(14),
             itemCount: docs.length,
+
             itemBuilder: (context, index) {
               final data = docs[index].data() as Map<String, dynamic>;
 
               final completedAt = (data["completedAt"] as Timestamp?)?.toDate();
 
               return Container(
-                margin: const EdgeInsets.only(bottom: 12),
+                margin: const EdgeInsets.only(bottom: 14),
                 padding: const EdgeInsets.all(16),
+
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(16),
@@ -70,9 +75,9 @@ class NGOHistoryPage extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    /// TITLE
+                    /// ================= TITLE =================
                     Text(
-                      data["title"] ?? "",
+                      data["title"] ?? "Donation",
                       style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
@@ -80,9 +85,9 @@ class NGOHistoryPage extends StatelessWidget {
                       ),
                     ),
 
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
 
-                    /// RESTAURANT (SAFE FALLBACK)
+                    /// ================= RESTAURANT =================
                     Row(
                       children: [
                         const Icon(Icons.store, size: 18, color: Colors.grey),
@@ -90,37 +95,53 @@ class NGOHistoryPage extends StatelessWidget {
                         Expanded(
                           child: Text(
                             data["restaurantName"] ?? "Restaurant",
-                            style: const TextStyle(fontWeight: FontWeight.w500),
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         ),
                       ],
                     ),
 
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 12),
 
-                    Row(
+                    /// ================= INFO BADGES =================
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
                       children: [
-                        _badge("Qty: ${data["quantity"]}"),
-                        const SizedBox(width: 6),
+                        _badge("Quantity: ${data["quantity"]}"),
                         _badge("Pickup: ${data["pickupTime"]}"),
                       ],
                     ),
 
                     const SizedBox(height: 10),
 
+                    /// ================= HALAL STATUS =================
                     _halalBadge(data["halal"] == true),
 
-                    const Divider(height: 24),
+                    const Divider(height: 28),
 
-                    /// COMPLETION DATE
-                    Text(
-                      completedAt != null
-                          ? "Completed: ${completedAt.toLocal()}"
-                          : "Completed",
-                      style: const TextStyle(
-                        color: Colors.black54,
-                        fontSize: 14,
-                      ),
+                    /// ================= COMPLETION DATE =================
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.check_circle,
+                          size: 18,
+                          color: Colors.green,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          completedAt != null
+                              ? "Completed on ${DateFormat('dd MMM yyyy, hh:mm a').format(completedAt)}"
+                              : "Completed",
+                          style: const TextStyle(
+                            color: Colors.black54,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -132,12 +153,13 @@ class NGOHistoryPage extends StatelessWidget {
     );
   }
 
+  /// ================= SMALL INFO BADGE =================
   Widget _badge(String text) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: const Color(0xfffaedcd),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Text(
         text,
@@ -149,19 +171,31 @@ class NGOHistoryPage extends StatelessWidget {
     );
   }
 
+  /// ================= HALAL / NON-HALAL BADGE =================
   Widget _halalBadge(bool halal) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
         color: halal ? Colors.green[100] : Colors.red[100],
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
       ),
-      child: Text(
-        halal ? "Halal" : "Non-Halal",
-        style: TextStyle(
-          color: halal ? Colors.green[800] : Colors.red[800],
-          fontWeight: FontWeight.bold,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            halal ? Icons.verified : Icons.warning,
+            size: 16,
+            color: halal ? Colors.green[800] : Colors.red[800],
+          ),
+          const SizedBox(width: 6),
+          Text(
+            halal ? "Halal" : "Non-Halal",
+            style: TextStyle(
+              color: halal ? Colors.green[800] : Colors.red[800],
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
       ),
     );
   }

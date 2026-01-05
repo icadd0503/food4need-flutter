@@ -97,6 +97,23 @@ class RestaurantDonationsPage extends StatelessWidget {
               final halal = donation["halal"] == true;
               final status = donation["status"] ?? "available";
 
+              /// ✅ ONLY CHANGE: AUTO-EXPIRE
+              if (status == "available" && donation["expiryAt"] != null) {
+                final expiry = (donation["expiryAt"] as Timestamp).toDate();
+
+                if (expiry.isBefore(DateTime.now())) {
+                  FirebaseFirestore.instance
+                      .collection("donations")
+                      .doc(docId)
+                      .update({
+                        "status": "expired",
+                        "expiredAt": Timestamp.now(),
+                      });
+
+                  return const SizedBox.shrink();
+                }
+              }
+
               bool isExpired = false;
               String expiryText = "";
 
@@ -177,7 +194,6 @@ class RestaurantDonationsPage extends StatelessWidget {
                             ),
                           ),
 
-                          /// 3-DOT MENU (EDIT + DELETE)
                           PopupMenuButton<String>(
                             onSelected: (value) async {
                               if (value == "edit") {
@@ -282,10 +298,40 @@ class RestaurantDonationsPage extends StatelessWidget {
                                   backgroundColor: Colors.green,
                                 ),
                                 onPressed: () async {
-                                  await FirebaseFirestore.instance
+                                  final donationRef = FirebaseFirestore.instance
                                       .collection("donations")
-                                      .doc(docId)
-                                      .update({"status": "confirmed"});
+                                      .doc(docId);
+
+                                  final snap = await donationRef.get();
+                                  final data =
+                                      snap.data() as Map<String, dynamic>;
+
+                                  final restaurantId =
+                                      FirebaseAuth.instance.currentUser!.uid;
+                                  final ngoId = data["ngoId"];
+
+                                  await donationRef.update({
+                                    "status": "confirmed",
+                                  });
+
+                                  final chatRef = FirebaseFirestore.instance
+                                      .collection("chats")
+                                      .doc(docId);
+
+                                  final chatSnap = await chatRef.get();
+
+                                  if (!chatSnap.exists) {
+                                    await chatRef.set({
+                                      "donationId": docId,
+                                      "restaurantId": restaurantId,
+                                      "ngoId": ngoId,
+                                      "participants": [restaurantId, ngoId],
+                                      "lastMessage":
+                                          "Chat started for this donation",
+                                      "lastMessageAt": Timestamp.now(),
+                                      "createdAt": Timestamp.now(),
+                                    });
+                                  }
                                 },
                                 child: const Text("Accept"),
                               ),

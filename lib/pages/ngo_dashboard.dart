@@ -8,6 +8,7 @@ import '../pages/profile_page.dart';
 import '../pages/ngo_accepted_page.dart';
 import '../pages/ngo_history_page.dart';
 import '../services/fcm_service.dart';
+import '../pages/chat_list_page.dart';
 
 class NGODashboard extends StatefulWidget {
   const NGODashboard({super.key});
@@ -205,6 +206,8 @@ class _NGODashboardState extends State<NGODashboard> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
+    final myUid = FirebaseAuth.instance.currentUser!.uid;
+
     final pages = [
       _homePage(),
       const NGOAcceptedPage(),
@@ -218,6 +221,73 @@ class _NGODashboardState extends State<NGODashboard> {
         backgroundColor: const Color(0xffd4a373),
         title: const Text("Food4Need", style: TextStyle(color: Colors.white)),
         actions: [
+          /// ✅ CHAT ICON WITH UNREAD BADGE (ONLY CHANGE)
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('chats')
+                .where('participants', arrayContains: myUid)
+                .snapshots(),
+            builder: (context, snapshot) {
+              int unreadTotal = 0;
+
+              if (snapshot.hasData) {
+                for (var chat in snapshot.data!.docs) {
+                  FirebaseFirestore.instance
+                      .collection('chats')
+                      .doc(chat.id)
+                      .collection('messages')
+                      .where('senderId', isNotEqualTo: myUid)
+                      .get()
+                      .then((msgs) {
+                        for (var m in msgs.docs) {
+                          final data = m.data() as Map<String, dynamic>;
+                          final seenBy = List<String>.from(
+                            data["seenBy"] ?? [],
+                          );
+                          if (!seenBy.contains(myUid)) {
+                            unreadTotal++;
+                          }
+                        }
+                      });
+                }
+              }
+
+              return Stack(
+                children: [
+                  IconButton(
+                    icon: const Icon(
+                      Icons.chat_bubble_outline,
+                      color: Colors.white,
+                    ),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const ChatListPage()),
+                      );
+                    },
+                  ),
+                  if (unreadTotal > 0)
+                    Positioned(
+                      right: 6,
+                      top: 6,
+                      child: CircleAvatar(
+                        radius: 9,
+                        backgroundColor: Colors.red,
+                        child: Text(
+                          unreadTotal.toString(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+
           if (_currentIndex == 0) ...[
             IconButton(
               icon: const Icon(Icons.filter_list),
@@ -228,6 +298,7 @@ class _NGODashboardState extends State<NGODashboard> {
               onPressed: _openSortDialog,
             ),
           ],
+
           PopupMenuButton(
             onSelected: (value) {
               if (value == "logout") _logout();
@@ -238,6 +309,7 @@ class _NGODashboardState extends State<NGODashboard> {
           ),
         ],
       ),
+
       body: IndexedStack(index: _currentIndex, children: pages),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
@@ -364,7 +436,6 @@ class _NGODashboardState extends State<NGODashboard> {
                           final rest =
                               restSnap.data?.data() as Map<String, dynamic>?;
 
-                          // ✅ ONLY UI CHANGED BELOW
                           return Card(
                             margin: const EdgeInsets.only(bottom: 14),
                             shape: RoundedRectangleBorder(
@@ -405,9 +476,7 @@ class _NGODashboardState extends State<NGODashboard> {
                                       ),
                                     ],
                                   ),
-
                                   const SizedBox(height: 10),
-
                                   Text(
                                     d["title"] ?? "",
                                     style: const TextStyle(
@@ -415,9 +484,7 @@ class _NGODashboardState extends State<NGODashboard> {
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
-
                                   const SizedBox(height: 6),
-
                                   Row(
                                     children: [
                                       Container(
@@ -470,14 +537,10 @@ class _NGODashboardState extends State<NGODashboard> {
                                         ),
                                     ],
                                   ),
-
                                   const SizedBox(height: 8),
-
                                   Text("Quantity: ${d["quantity"]}"),
                                   Text("Pickup: ${d["pickupTime"]}"),
-
                                   const SizedBox(height: 12),
-
                                   SizedBox(
                                     width: double.infinity,
                                     child: ElevatedButton(

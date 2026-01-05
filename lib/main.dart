@@ -7,7 +7,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-
 import 'services/fcm_service.dart';
 
 // pages
@@ -28,11 +27,12 @@ import 'pages/ngo_accepted_page.dart';
 import 'pages/ngo_history_page.dart';
 import 'pages/restaurant_history_page.dart';
 import 'pages/edit_donation_page.dart';
+import 'pages/chat_list_page.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 String? pendingAction;
-String? cachedRole; // 🔥 ROLE CACHE
+String? cachedRole;
 
 // ================= BACKGROUND HANDLER =================
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -62,24 +62,20 @@ void main() async {
 
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-  // 🔥 INIT FCM IF USER ALREADY LOGGED IN
   if (FirebaseAuth.instance.currentUser != null) {
     await FCMService.initFCM();
   }
 
-  // ================= TERMINATED TAP =================
   final initialMsg = await FirebaseMessaging.instance.getInitialMessage();
   if (initialMsg != null) {
     pendingAction = initialMsg.data["action"];
   }
 
-  // ================= FOREGROUND =================
   FirebaseMessaging.onMessage.listen((message) async {
     final action = message.data["action"];
     final role = await _getUserRole();
     if (role == null) return;
 
-    // 🚫 BLOCK WRONG ROLE
     if (action == "OPEN_NGO_DASHBOARD" && role != "ngo") return;
     if (action == "DONATE_ACTION" && role != "restaurant") return;
 
@@ -100,7 +96,6 @@ void main() async {
     );
   });
 
-  // ================= BACKGROUND TAP =================
   FirebaseMessaging.onMessageOpenedApp.listen((message) async {
     final action = message.data["action"];
     final role = await _getUserRole();
@@ -153,7 +148,9 @@ class MyApp extends StatelessWidget {
         "/ngo-history": (_) => const NGOHistoryPage(),
 
         "/admin-dashboard": (_) => const AdminDashboard(),
-        '/admin-activity': (context) => const AdminActivityPage(),
+        "/admin-activity": (_) => const AdminActivityPage(),
+
+        "/chats": (_) => const ChatListPage(),
       },
 
       onGenerateRoute: (settings) {
@@ -166,7 +163,6 @@ class MyApp extends StatelessWidget {
         return null;
       },
 
-      // ================= TERMINATED ACTION =================
       builder: (context, child) {
         Future.microtask(() async {
           if (pendingAction != null) {
