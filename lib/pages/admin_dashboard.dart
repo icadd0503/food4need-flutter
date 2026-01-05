@@ -308,7 +308,7 @@ Food4Need Team
     );
   }
 
-  final String _apiKey = 'AIzaSyBsDPFpc4_YhNLe7e8AyrnVE-Xsu_rZBXw';
+  final String _apiKey = 'AIzaSyAXUfDtw_DvijkgKWxan1uclYknzuLYP6o';
   bool _isGeneratingReport = false;
 
  Future<String> _generateAIInsight() async {
@@ -349,35 +349,35 @@ Future<void> _generateAndDownloadPdf() async {
     // 1. Get AI Text
     final aiSummary = await _generateAIInsight();
 
-    // 2. Calculate "AI" Performance Score (0 to 10 scale)
+    // 2. Calculate Score
     double calculatedScore = 5.0 + (totalCompletedQuantity * 0.1) + ((restaurantsCount + ngosCount) * 0.2);
     if (calculatedScore > 10.0) calculatedScore = 10.0;
     final String scoreString = calculatedScore.toStringAsFixed(1);
 
     // 3. Prepare Chart Data
-    // Ensure we strictly have 7 data points. If list is empty, fill with 0s.
     final List<int> chartData = _weeklyCounts.isEmpty ? List.filled(7, 0) : _weeklyCounts;
     final List<String> chartLabels = _weeklyLabels.isEmpty ? List.generate(7, (i) => "") : _weeklyLabels;
     
-    final maxValue = chartData.reduce(max);
-    final safeMax = maxValue == 0 ? 1 : maxValue;
+    final int rawMax = chartData.reduce(max);
+    final double chartTopScale = rawMax == 0 ? 10.0 : (rawMax * 1.2).ceilToDouble();
     
-    // Create chart grid steps
-    final step1 = (safeMax / 2).round();
-    final step2 = safeMax;
+    final int step2 = chartTopScale.toInt();
+    final int step1 = (chartTopScale / 2).round();
 
     final pdf = pw.Document();
     final font = await PdfGoogleFonts.openSansRegular();
     final bold = await PdfGoogleFonts.openSansBold();
     
-    // Palette
     final primaryColor = PdfColors.orange800;
     final accentColor = PdfColors.teal800;
     final gridColor = PdfColors.grey300;
+    
+    const double chartHeight = 140.0; 
 
     pdf.addPage(
       pw.Page(
         pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32), 
         build: (pw.Context context) {
           return pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -389,32 +389,29 @@ Future<void> _generateAndDownloadPdf() async {
                   pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
-                      pw.Text('EXECUTIVE IMPACT REPORT', style: pw.TextStyle(font: bold, fontSize: 20, color: accentColor)),
+                      pw.Text('EXECUTIVE IMPACT REPORT', style: pw.TextStyle(font: bold, fontSize: 18, color: accentColor)),
                       pw.Text('Food4Need Admin System', style: pw.TextStyle(font: font, fontSize: 10, color: PdfColors.grey600)),
                     ],
                   ),
                   pw.Container(
-                    padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: pw.BoxDecoration(
-                      color: primaryColor,
-                      borderRadius: pw.BorderRadius.circular(4),
-                    ),
+                    padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: pw.BoxDecoration(color: primaryColor, borderRadius: pw.BorderRadius.circular(4)),
                     child: pw.Column(
                       children: [
                         pw.Text('PERFORMANCE', style: pw.TextStyle(font: bold, fontSize: 8, color: PdfColors.white)),
-                        pw.Text('$scoreString / 10.0', style: pw.TextStyle(font: bold, fontSize: 16, color: PdfColors.white)),
+                        pw.Text('$scoreString / 10.0', style: pw.TextStyle(font: bold, fontSize: 14, color: PdfColors.white)),
                       ],
                     ),
                   )
                 ],
               ),
               pw.Divider(color: primaryColor, thickness: 2),
-              pw.SizedBox(height: 20),
+              pw.SizedBox(height: 15), 
 
               // --- AI SUMMARY ---
               pw.Container(
                 width: double.infinity,
-                padding: const pw.EdgeInsets.all(15),
+                padding: const pw.EdgeInsets.all(12),
                 decoration: pw.BoxDecoration(
                   color: PdfColors.grey100,
                   border: pw.Border(left: pw.BorderSide(color: accentColor, width: 4)),
@@ -422,45 +419,44 @@ Future<void> _generateAndDownloadPdf() async {
                 child: pw.Column(
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
-                    pw.Text('AI EXECUTIVE SUMMARY', style: pw.TextStyle(font: bold, fontSize: 10, color: accentColor)),
-                    pw.SizedBox(height: 5),
-                    pw.Text(aiSummary, style: pw.TextStyle(font: font, fontSize: 10, lineSpacing: 1.5)),
+                    pw.Text('OVERALL SUMMARY', style: pw.TextStyle(font: bold, fontSize: 9, color: accentColor)),
+                    pw.SizedBox(height: 4),
+                    pw.Text(aiSummary, style: pw.TextStyle(font: font, fontSize: 9, lineSpacing: 1.4)),
                   ],
                 ),
               ),
-              pw.SizedBox(height: 30),
+              pw.SizedBox(height: 20), 
 
-              // --- ACCURATE CHART SECTION ---
-              pw.Text('ACTIVITY TREND (7 DAYS)', style: pw.TextStyle(font: bold, fontSize: 12, color: accentColor)),
+              // --- CHART SECTION ---
+              pw.Text('ACTIVITY TREND (7 DAYS)', style: pw.TextStyle(font: bold, fontSize: 11, color: accentColor)),
               pw.SizedBox(height: 10),
               
               pw.Row(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  // Y-Axis Labels (Fixed width)
+                  // Y-Axis
                   pw.Container(
-                    width: 30, // Fixed width for alignment
-                    height: 135, // Match chart height + label buffer
+                    width: 30,
+                    height: chartHeight + 15,
                     child: pw.Column(
                       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                       crossAxisAlignment: pw.CrossAxisAlignment.end,
                       children: [
-                        pw.Text('$step2', style: pw.TextStyle(font: font, fontSize: 9, color: PdfColors.grey600)), 
-                        pw.Text('$step1', style: pw.TextStyle(font: font, fontSize: 9, color: PdfColors.grey600)), 
-                        pw.Text('0', style: pw.TextStyle(font: font, fontSize: 9, color: PdfColors.grey600)),   
-                        pw.SizedBox(height: 10), // Spacing for X-axis labels
+                        pw.Text('$step2', style: pw.TextStyle(font: font, fontSize: 8, color: PdfColors.grey600)), 
+                        pw.Text('$step1', style: pw.TextStyle(font: font, fontSize: 8, color: PdfColors.grey600)), 
+                        pw.Text('0', style: pw.TextStyle(font: font, fontSize: 8, color: PdfColors.grey600)),   
+                        pw.SizedBox(height: 10),
                       ],
                     ),
                   ),
                   pw.SizedBox(width: 8),
 
-                  // The Chart Area
+                  // Chart Body
                   pw.Expanded(
                     child: pw.Column(
                       children: [
-                        // The Graph Frame
                         pw.Container(
-                          height: 120,
+                          height: chartHeight,
                           decoration: pw.BoxDecoration(
                             border: pw.Border(
                               left: pw.BorderSide(color: PdfColors.grey400),
@@ -469,7 +465,6 @@ Future<void> _generateAndDownloadPdf() async {
                           ),
                           child: pw.Stack(
                             children: [
-                              // Grid Lines
                               pw.Column(
                                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                                 children: [
@@ -478,26 +473,25 @@ Future<void> _generateAndDownloadPdf() async {
                                   pw.Container(),
                                 ],
                               ),
-                              // Bars Row (Using Expanded to ensure equal width)
                               pw.Row(
                                 crossAxisAlignment: pw.CrossAxisAlignment.end,
                                 children: List.generate(chartData.length, (i) {
                                   final value = chartData[i];
-                                  final double barHeight = (value / safeMax) * 118;
+                                  final double barHeight = (value / chartTopScale) * chartHeight;
                                   
                                   return pw.Expanded(
                                     child: pw.Column(
                                       mainAxisAlignment: pw.MainAxisAlignment.end,
                                       children: [
-                                        // Value Label
                                         if (value > 0)
-                                          pw.Text('$value', style: pw.TextStyle(fontSize: 8, color: PdfColors.black)),
-                                        
-                                        // The Bar (or flat line if 0)
+                                          pw.Padding(
+                                            padding: const pw.EdgeInsets.only(bottom: 2),
+                                            child: pw.Text('$value', style: pw.TextStyle(fontSize: 7, color: PdfColors.black)),
+                                          ),
                                         pw.Container(
-                                          width: 15, // Fixed bar width
+                                          width: 15,
                                           height: value == 0 ? 1 : (barHeight < 2 ? 2 : barHeight),
-                                          color: value == 0 ? PdfColors.grey300 : accentColor,
+                                          color: value == 0 ? PdfColors.grey200 : accentColor,
                                         ),
                                       ],
                                     ),
@@ -507,8 +501,6 @@ Future<void> _generateAndDownloadPdf() async {
                             ],
                           ),
                         ),
-                        
-                        // X-Axis Labels (Must match the bars exactly)
                         pw.SizedBox(height: 4),
                         pw.Row(
                           children: List.generate(chartLabels.length, (i) {
@@ -516,7 +508,7 @@ Future<void> _generateAndDownloadPdf() async {
                               child: pw.Center(
                                 child: pw.Text(
                                   chartLabels[i].split('/')[0] + '/' + chartLabels[i].split('/')[1],
-                                  style: pw.TextStyle(font: font, fontSize: 8, color: PdfColors.grey700),
+                                  style: pw.TextStyle(font: font, fontSize: 7, color: PdfColors.grey700),
                                 ),
                               ),
                             );
@@ -528,18 +520,10 @@ Future<void> _generateAndDownloadPdf() async {
                 ],
               ),
               
-              // X-Axis Title
-              pw.Center(
-                child: pw.Padding(
-                  padding: const pw.EdgeInsets.only(top: 5),
-                  child: pw.Text('Date (Day/Month)', style: pw.TextStyle(font: font, fontSize: 8, color: PdfColors.grey500)),
-                )
-              ),
+              pw.SizedBox(height: 25), 
 
-              pw.SizedBox(height: 30),
-
-              // --- KEY METRICS ---
-              pw.Text('KEY METRICS', style: pw.TextStyle(font: bold, fontSize: 12, color: accentColor)),
+              // --- CENTERED KEY METRICS TABLE ---
+              pw.Text('KEY METRICS', style: pw.TextStyle(font: bold, fontSize: 11, color: accentColor)),
               pw.SizedBox(height: 5),
               pw.Table.fromTextArray(
                 headers: ['Metric Category', 'Measured Value'],
@@ -549,12 +533,15 @@ Future<void> _generateAndDownloadPdf() async {
                   ['Participating NGOs', '$ngosCount'],
                   ['Total Transactions (7d)', '${chartData.fold(0, (a, b) => a + b)}'],
                 ],
-                headerStyle: pw.TextStyle(font: bold, color: PdfColors.white, fontSize: 10),
+                headerStyle: pw.TextStyle(font: bold, color: PdfColors.white, fontSize: 9),
                 headerDecoration: pw.BoxDecoration(color: accentColor),
-                cellStyle: pw.TextStyle(font: font, fontSize: 10),
-                cellAlignments: {0: pw.Alignment.centerLeft, 1: pw.Alignment.centerRight},
+                // 🔥 CHANGED: Center Headers
+                headerAlignment: pw.Alignment.center, 
+                // 🔥 CHANGED: Center Cell Content
+                cellAlignment: pw.Alignment.center,
+                cellStyle: pw.TextStyle(font: font, fontSize: 9),
                 border: pw.TableBorder.all(color: PdfColors.grey300),
-                cellPadding: const pw.EdgeInsets.all(8),
+                cellPadding: const pw.EdgeInsets.symmetric(vertical: 4, horizontal: 8),
               ),
 
               pw.Spacer(),
@@ -702,8 +689,8 @@ Future<void> _generateAndDownloadPdf() async {
                         : const Icon(Icons.picture_as_pdf),
                 label: Text(
                   _isGeneratingReport
-                      ? 'AI is writing report...'
-                      : 'Generate AI Report (PDF)',
+                      ? 'Report in progress...'
+                      : 'Generate Weekly Report (PDF)',
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xffd4a373),
