@@ -32,6 +32,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
   int activeDonationQuantity = 0;
   int expiredDonationQuantity = 0;
 
+  // Top 5 most active restaurants
+  List<Map<String, dynamic>> _topRestaurants = [];
+
   // Chart view: '7days', 'month'
   String _chartView = '7days';
 
@@ -82,6 +85,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
           .where('completedAt', isNotEqualTo: null)
           .get();
 
+      // --- Aggregate restaurant activity for leaderboard ---
+      Map<String, int> restaurantActivity = {};
+      Map<String, String> restaurantNames = {};
+      for (final doc in qRes.docs) {
+        final data = doc.data();
+        restaurantNames[doc.id] = data['name'] ?? data['email'] ?? 'Unknown';
+      }
+
       int sumCompletedQty = 0;
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
@@ -113,6 +124,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
           qty = q.toInt();
         sumCompletedQty += qty;
 
+        // --- Aggregate by restaurantId ---
+        final restaurantId = data['restaurantId'] ?? data['createdBy'];
+        if (restaurantId != null) {
+          restaurantActivity[restaurantId] = (restaurantActivity[restaurantId] ?? 0) + qty;
+        }
+
         final completedTs = data['completedAt'] as Timestamp?;
         if (completedTs != null) {
           final completedDate = completedTs.toDate();
@@ -140,6 +157,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
           }
         }
       }
+
+      // Sort and get top 5
+      final sorted = restaurantActivity.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      _topRestaurants = sorted.take(5).map((e) => {
+        'id': e.key,
+        'name': restaurantNames[e.key] ?? 'Unknown',
+        'count': e.value,
+      }).toList();
 
       final qActiveCandidates = await FirebaseFirestore.instance
           .collection('donations')
@@ -182,6 +208,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
           totalCompletedQuantity = sumCompletedQty;
           activeDonationQuantity = sumActiveQty;
           expiredDonationQuantity = sumExpiredQty;
+          // update top restaurants
+          _topRestaurants = List<Map<String, dynamic>>.from(_topRestaurants);
         });
       }
     } catch (e) {
@@ -1152,6 +1180,39 @@ Future<void> _generateAndDownloadPdf() async {
                         ],
                       ),
             ),
+            const SizedBox(height: 18),
+            // --- Top 5 Most Active Restaurant Leaderboard ---
+            if (_topRestaurants.isNotEmpty) ...[
+              const Text(
+                'Top 5 Most Active Restaurant',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              ListView.separated(
+                shrinkWrap: true,
+                physics: NeverScrollableScrollPhysics(),
+                itemCount: _topRestaurants.length,
+                separatorBuilder: (_, __) => Divider(height: 1),
+                itemBuilder: (context, i) {
+                  final r = _topRestaurants[i];
+                  return ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: Colors.brown.shade200,
+                      child: Text(
+                        (i + 1).toString(),
+                        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
+                      ),
+                    ),
+                    title: Text(r['name'] ?? 'Unknown'),
+                    trailing: Text(
+                      '${r['count']} items',
+                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
           ],
         ),
       ),
