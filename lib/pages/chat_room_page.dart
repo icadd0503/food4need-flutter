@@ -17,7 +17,6 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
   @override
   void initState() {
     super.initState();
-    _markMessagesAsSeen();
   }
 
   /// MARK INCOMING MESSAGES AS SEEN
@@ -85,6 +84,8 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
                 if (!snapshot.hasData) {
                   return const Center(child: CircularProgressIndicator());
                 }
+
+                _markMessagesAsSeen();
 
                 final messages = snapshot.data!.docs;
 

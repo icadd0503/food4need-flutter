@@ -160,9 +160,14 @@ class _RegisterPageState extends State<RegisterPage> {
             "businessRegNo": role == "restaurant"
                 ? businessRegNo.text.trim()
                 : null,
-            "operatingHours": role == "restaurant"
-                ? "${openTime!.format(context)} - ${closeTime!.format(context)}"
+            "openingTime": role == "restaurant"
+                ? _timeTo24String(openTime!)
                 : null,
+
+            "closingTime": role == "restaurant"
+                ? _timeTo24String(closeTime!)
+                : null,
+
             "halal": role == "restaurant" ? halal : null,
 
             // NGO
@@ -361,6 +366,11 @@ class _RegisterPageState extends State<RegisterPage> {
         ),
       ),
     );
+  }
+
+  String _timeTo24String(TimeOfDay t) {
+    return "${t.hour.toString().padLeft(2, '0')}:"
+        "${t.minute.toString().padLeft(2, '0')}";
   }
 
   Widget _input(

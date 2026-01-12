@@ -34,6 +34,7 @@ class _NGODashboardState extends State<NGODashboard> {
   @override
   void initState() {
     super.initState();
+    FCMService.initFCM();
     _loadNGOProfile();
     _loadNGOLocation();
   }

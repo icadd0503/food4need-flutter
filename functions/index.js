@@ -13,22 +13,25 @@ initializeApp();
 
 /* =========================================================
    DAILY RESTAURANT REMINDER
-   ⏰ Runs every 15 minutes
+   ⏰ Runs every 15 minutes (KL time)
    🔔 Sends reminder 1 hour before closing time
 ========================================================= */
 exports.sendDailyDonationReminder = onSchedule(
   {
-    schedule: "*/15 * * * *", // every 15 minute
+    schedule: "*/15 * * * *", // every 15 minutes
     timeZone: "Asia/Kuala_Lumpur",
   },
   async () => {
-    const db = getFirestore();
     const now = new Date();
-    // Convert to Kuala Lumpur time (UTC+8) to match user-local dates/times
-    const utc = now.getTime() + now.getTimezoneOffset() * 60000;
-    const nowKL = new Date(utc + 8 * 60 * 1000);
-    const today = nowKL.toISOString().split("T")[0]; // YYYY-MM-DD in KL timezone
+    console.log("[SCHEDULER] woke up at", now.toISOString());
 
+    const db = getFirestore();
+
+    const today = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate()
+    ).toISOString().split("T")[0];
 
     const usersSnap = await db
       .collection("users")
@@ -41,117 +44,68 @@ exports.sendDailyDonationReminder = onSchedule(
 
     usersSnap.forEach((doc) => {
       const user = doc.data();
-      console.log(`Checking user ${doc.id}: openingTime=${user.openingTime}, closingTime=${user.closingTime}, fcmToken=${!!user.fcmToken}, lastReminderDate=${user.lastReminderDate}`);
 
-      if (!user.fcmToken) {
-        console.log(`Skipping ${doc.id}: no fcmToken`);
-        return;
-      }
-      if (!user.closingTime) {
-        console.log(`Skipping ${doc.id}: no closingTime`);
+      if (!user.fcmToken || !user.closingTime) {
+        console.log("[SKIP] missing fcmToken or closingTime", doc.id);
         return;
       }
 
-      // closingTime expected format: "HH:mm" (24h)
-      const closingStr = String(user.closingTime);
-      const parts = closingStr.split(":").map(Number);
-      if (parts.length < 2 || parts.some((n) => Number.isNaN(n))) {
-        console.log(`Skipping ${doc.id}: invalid closingTime format (${user.closingTime})`);
+      // closingTime must be "HH:mm"
+      const [closeHour, closeMinute] = String(user.closingTime)
+        .split(":")
+        .map(Number);
+
+      if (Number.isNaN(closeHour) || Number.isNaN(closeMinute)) {
+        console.log("[SKIP] invalid closingTime", doc.id);
         return;
       }
 
-      const [closeHour, closeMinute] = parts;
-
-      // Parse openingTime if available to detect overnight closing (e.g., open 10:00 -> close 02:00)
-      let openingMins = null;
-      if (user.openingTime) {
-        try {
-          const opParts = String(user.openingTime).split(":").map(Number);
-          if (opParts.length >= 2 && !opParts.some((n) => Number.isNaN(n))) {
-            openingMins = opParts[0] * 60 + opParts[1];
-          }
-        } catch (e) {
-          // ignore parse
-        }
-      }
-
-      // Use Kuala Lumpur 'now' for comparisons
-      const closingDateTime = new Date(nowKL);
+      // Build closing datetime (KL time)
+      const closingDateTime = new Date(now);
       closingDateTime.setHours(closeHour, closeMinute, 0, 0);
 
-      // Determine if this is an overnight closing (e.g., open 10:41 AM, close 3:30 AM next day)
-      if (openingMins != null) {
-        const closeMins = closeHour * 60 + closeMinute;
-        const nowMins = nowKL.getHours() * 60 + nowKL.getMinutes();
-        
-        // If closing < opening, it's an overnight schedule
-        if (closeMins <= openingMins) {
-          // Are we currently in the "open" period (after opening) or "closing soon" period (before closing)?
-          if (nowMins >= openingMins) {
-            // We're after opening time, so closing is tonight/early tomorrow morning
-            closingDateTime.setDate(closingDateTime.getDate() + 1);
-            console.log(`Overnight schedule - closing is tomorrow early morning for ${doc.id}`);
-          } else if (nowMins <= closeMins) {
-            // We're in early morning before closing time - closing is TODAY
-            console.log(`Overnight schedule - currently before closing time for ${doc.id}`);
-          } else {
-            // We're between closing and opening - closed right now, next closing is tomorrow
-            closingDateTime.setDate(closingDateTime.getDate() + 1);
-            console.log(`Overnight schedule - currently closed, next closing is tomorrow for ${doc.id}`);
-          }
-        } else if (closingDateTime <= nowKL) {
-          // Normal schedule, but closing time already passed today
-          closingDateTime.setDate(closingDateTime.getDate() + 1);
-          console.log(`Adjusted closingDateTime to next day for ${doc.id} because closingTime <= now`);
-        }
-      } else {
-        // no opening time; if closing appears earlier than now and is early morning, treat as next day
-        if (closingDateTime <= nowKL && closeHour < 12) {
-          closingDateTime.setDate(closingDateTime.getDate() + 1);
-          console.log(`Adjusted closingDateTime to next day for ${doc.id} (no openingTime, early close)`);
-        }
+      // If closing already passed today → tomorrow
+      if (closingDateTime <= now) {
+        closingDateTime.setDate(closingDateTime.getDate() + 1);
       }
 
-      // Reminder = 1 hour before closing
-      const reminderTime = new Date(closingDateTime.getTime() - 60 * 60 * 1000);
+      // 1 hour before closing
+      const reminderTime = new Date(
+        closingDateTime.getTime() - 60 * 60 * 1000
+      );
 
-      // Check if reminder time has arrived
-      if (reminderTime <= nowKL) {
-        const minutesSinceReminder = (nowKL - reminderTime) / (1000 * 60);
-        
-        // Only send if within 2-minute window AND haven't sent today yet
-        if (minutesSinceReminder <= 2) {
-          
-          // Check if we've already sent a reminder today
-          if (user.lastReminderDate === today) {
-            console.log(`Skipping ${doc.id}: already reminded today (${today})`);
-            return;
-          }
+      const diffMinutes = (now - reminderTime) / (1000 * 60);
 
-          console.log(`Sending reminder to ${doc.id}; reminderTime=${reminderTime.toISOString()}, nowKL=${nowKL.toISOString()}`);
-          messages.push({
-            token: user.fcmToken,
-            notification: {
-              title: "Leftover food reminder 🍱",
-              body: "You're closing in 1 hour. Any surplus food to donate?",
-            },
-            data: {
-              action: "DONATE_ACTION",
-            },
-          });
-
-          // Store today's date to prevent duplicate reminders
-          updates.push(
-            db.collection("users").doc(doc.id).update({
-              lastReminderDate: today,
-            })
-          );
-        } else {
-          console.log(`Reminder window passed for ${doc.id}; reminderTime was ${reminderTime.toISOString()}, nowKL=${nowKL.toISOString()}, minutesSince=${minutesSinceReminder.toFixed(1)}`);
+      // Trigger window (scheduler runs every 15 min)
+      if (diffMinutes >= 0 && diffMinutes <= 15) {
+        if (user.lastReminderDate === today) {
+          console.log("[SKIP] already reminded today", doc.id);
+          return;
         }
-      } else {
-        const minutesUntilReminder = (reminderTime - nowKL) / (1000 * 60);
-        console.log(`Not time yet for ${doc.id}; reminder=${reminderTime.toISOString()}, nowKL=${nowKL.toISOString()}, minutesUntil=${minutesUntilReminder.toFixed(1)}`);
+
+        console.log("[REMINDER SENT]", {
+          userId: doc.id,
+          name: user.name ?? "Unknown",
+          closingTime: user.closingTime,
+          reminderAt: reminderTime.toISOString(),
+        });
+
+        messages.push({
+          token: user.fcmToken,
+          notification: {
+            title: "Leftover food reminder 🍱",
+            body: "You're closing in 1 hour. Any surplus food to donate?",
+          },
+          data: {
+            action: "DONATE_ACTION",
+          },
+        });
+
+        updates.push(
+          db.collection("users").doc(doc.id).update({
+            lastReminderDate: today,
+          })
+        );
       }
     });
 
@@ -163,6 +117,8 @@ exports.sendDailyDonationReminder = onSchedule(
     return null;
   }
 );
+
+
 
 /* =========================================================
    🔔 NOTIFY NEARBY NGOs WHEN DONATION IS CREATED
@@ -274,7 +230,9 @@ exports.notifyNGOOnConfirm = onDocumentUpdated(
     const token = ngoSnap.data().fcmToken;
     if (!token) return;
 
-    await getMessaging().send({
+    const messages = [];
+
+    messages.push({
       token,
       notification: {
         title: "Pickup Confirmed ✅",
@@ -284,8 +242,10 @@ exports.notifyNGOOnConfirm = onDocumentUpdated(
         action: "OPEN_NGO_DASHBOARD",
       },
     });
-  }
-);
+
+    await getMessaging().sendEach(messages);
+      }
+    );
 
 /* =========================================================
    NGO collects → notify Restaurant
@@ -309,7 +269,9 @@ exports.notifyRestaurantOnCollected = onDocumentUpdated(
     const token = restaurantSnap.data().fcmToken;
     if (!token) return;
 
-    await getMessaging().send({
+    const messages = [];
+
+    messages.push({
       token,
       notification: {
         title: "Food Collected 🎉",
@@ -319,8 +281,11 @@ exports.notifyRestaurantOnCollected = onDocumentUpdated(
         action: "OPEN_RESTAURANT_HISTORY",
       },
     });
-  }
-);
+
+    await getMessaging().sendEach(messages);
+
+      }
+    );
 
 /* =========================================================
    DISTANCE HELPER (HAVERSINE)

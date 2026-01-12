@@ -28,6 +28,7 @@ class _RestaurantDashboardState extends State<RestaurantDashboard> {
   @override
   void initState() {
     super.initState();
+    FCMService.initFCM();
     _loadUser();
     _loadStats();
     FirebaseMessaging.onMessage.listen((message) {});

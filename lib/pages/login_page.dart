@@ -18,6 +18,32 @@ class _LoginPageState extends State<LoginPage> {
   bool showPassword = false;
   String error = "";
 
+  /// 🔑 FORGOT PASSWORD
+  Future<void> _forgotPassword() async {
+    if (email.text.trim().isEmpty) {
+      setState(() => error = "Please enter your email to reset password");
+      return;
+    }
+
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(
+        email: email.text.trim(),
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Password reset link sent to your email")),
+      );
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'user-not-found') {
+        setState(() => error = "Email not registered");
+      } else {
+        setState(() => error = "Failed to send reset email");
+      }
+    }
+  }
+
   Future<void> login() async {
     if (email.text.trim().isEmpty) {
       setState(() => error = "Please enter your email");
@@ -117,7 +143,6 @@ class _LoginPageState extends State<LoginPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                /// 🔥 APP LOGO
                 CircleAvatar(
                   radius: 36,
                   backgroundColor: const Color(0xffd4a373),
@@ -129,7 +154,6 @@ class _LoginPageState extends State<LoginPage> {
                 ),
 
                 const SizedBox(height: 14),
-
                 const Text(
                   "Food4Need",
                   style: TextStyle(
@@ -140,12 +164,10 @@ class _LoginPageState extends State<LoginPage> {
                 ),
 
                 const SizedBox(height: 6),
-
                 const Text(
                   "Login to continue",
                   style: TextStyle(color: Colors.black54),
                 ),
-
                 const SizedBox(height: 16),
 
                 if (error.isNotEmpty)
@@ -191,7 +213,19 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
 
-                const SizedBox(height: 22),
+                /// 🔑 FORGOT PASSWORD BUTTON
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: loading ? null : _forgotPassword,
+                    child: const Text(
+                      "Forgot Password?",
+                      style: TextStyle(color: Color(0xff5a3825)),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 10),
 
                 SizedBox(
                   width: double.infinity,
